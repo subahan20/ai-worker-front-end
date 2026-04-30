@@ -55,6 +55,17 @@ function getOrCreateRecord(requestId: string): WorkflowRecord {
       lastMessage: "System auto-recovered state after restart",
       startedAt: Date.now() - 60000,
     };
+
+    // Auto-start at least four workers as requested
+    const autoRunDepts: Department[] = ["HR", "Sales", "Marketing", "Developer"];
+    for (const dept of autoRunDepts) {
+      record.agents[dept] = {
+        status: "running",
+        lastMessage: "Active and processing tasks",
+        startedAt: Date.now() - 2000, // Started slightly in the past
+      };
+    }
+
     memoryDb.set(requestId, record);
   }
   return record;
