@@ -117,7 +117,7 @@ export default function CEODashboard() {
   const handleApproveAll = async () => {
     const pendingCount = tasks.filter(t => t.status === 'waiting_for_ceo').length;
     if (pendingCount === 0) {
-      addToast('No tasks waiting for approval', 'info');
+      addToast('No tasks waiting for approval', 'success');
       return;
     }
 

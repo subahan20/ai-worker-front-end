@@ -187,7 +187,7 @@ export default function NeuralWorkflowSystem() {
           addToast('✅ CEO Strategic Report Generated', 'success');
         } else {
           removeToast(loadingId);
-          addToast('ℹ️ No shortlisted candidates found yet.', 'info');
+          addToast('ℹ️ No shortlisted candidates found yet.', 'success');
         }
       } else {
         throw new Error(data.error);

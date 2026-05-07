@@ -29,7 +29,7 @@ export default function PlanModal({ isOpen, onClose, onPlanCreated }: PlanModalP
 
       // SPECIAL CASE: HR Resume Parsing
       if (department === 'HR' && formData.resumeFile) {
-        addToast('📤 Uploading Resume...', 'info');
+        addToast('📤 Uploading Resume...', 'loading');
         
         const file = formData.resumeFile;
         if (!(file instanceof File)) {
@@ -82,7 +82,7 @@ export default function PlanModal({ isOpen, onClose, onPlanCreated }: PlanModalP
         }
 
         // 3. Trigger Autonomous Parsing API (SERVER-SIDE ONLY)
-        addToast('🤖 AI is parsing resume...', 'info');
+        addToast('🤖 AI is parsing resume...', 'loading');
         const parseRes = await fetch('/api/parse-resume', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
