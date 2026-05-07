@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/src/lib/supabase';
 import { useToast } from './Toast';
 
@@ -24,7 +24,12 @@ interface AIReport {
   created_at: string;
 }
 
-export default function MarketingTab() {
+interface MarketingTabProps {
+  profiles: any[];
+  setProfiles: React.Dispatch<React.SetStateAction<any[]>>;
+}
+
+export default function MarketingTab({ profiles, setProfiles }: MarketingTabProps) {
   const [reels, setReels] = useState<Reel[]>([]);
   const [reports, setReports] = useState<AIReport[]>([]);
   const [selectedReport, setSelectedReport] = useState<AIReport | null>(null);
@@ -76,9 +81,9 @@ export default function MarketingTab() {
       </header>
 
       {selectedReport && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-          {/* Left: AI Strategy & Scripts */}
-          <div className="xl:col-span-2 space-y-8">
+        <div className="space-y-8">
+          {/* Main: AI Strategy & Scripts */}
+          <div className="space-y-8">
             <div className="bg-[#0f0f0f] border border-white/5 p-10 rounded-[2.5rem] space-y-10">
               <div className="flex justify-between items-center">
                 <h3 className="text-xs font-black uppercase tracking-[0.3em] text-white">Groq Content Strategy</h3>
@@ -96,6 +101,11 @@ export default function MarketingTab() {
                   <h4 className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Visual Style</h4>
                   <p className="text-sm text-slate-400 leading-relaxed font-medium">{selectedReport.viral_patterns.visual_patterns}</p>
                 </div>
+              </div>
+
+              <div className="bg-pink-500/10 border border-pink-500/20 p-8 rounded-[2.5rem] space-y-4">
+                 <h3 className="text-[10px] font-black uppercase tracking-widest text-pink-500">Execution Thesis</h3>
+                 <p className="text-xs text-pink-100/70 leading-relaxed italic">"{selectedReport.execution_summary}"</p>
               </div>
 
               <div className="space-y-6">
@@ -132,32 +142,6 @@ export default function MarketingTab() {
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-
-          {/* Right: Viral Reels & Analytics */}
-          <div className="space-y-8">
-            <div className="bg-[#080808] border border-white/5 p-8 rounded-[2.5rem] space-y-8">
-              <h3 className="text-xs font-black uppercase tracking-[0.3em] text-[#444]">Detected Viral Reels</h3>
-              <div className="space-y-4">
-                {reels.filter(r => r.username === selectedReport.username).map((reel) => (
-                  <div key={reel.id} className="relative group overflow-hidden rounded-[2rem] border border-white/5 bg-[#0a0a0a] hover:border-pink-500/50 transition-all">
-                    <img src={reel.thumbnail_url} className="w-full h-48 object-cover opacity-30 group-hover:opacity-60 transition-opacity" />
-                    <div className="absolute inset-0 p-6 flex flex-col justify-end bg-gradient-to-t from-black to-transparent">
-                      <div className="flex justify-between items-center mb-2">
-                        <p className="text-2xl font-black text-white">{(reel.views / 1000).toFixed(0)}K</p>
-                        <span className="px-2 py-0.5 bg-pink-500 text-white text-[8px] font-black rounded uppercase">Viral</span>
-                      </div>
-                      <p className="text-[10px] text-slate-400 line-clamp-1 font-medium">{reel.caption}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-pink-500/10 border border-pink-500/20 p-8 rounded-[2.5rem] space-y-4">
-               <h3 className="text-[10px] font-black uppercase tracking-widest text-pink-500">Execution Thesis</h3>
-               <p className="text-xs text-pink-100/70 leading-relaxed italic">"{selectedReport.execution_summary}"</p>
             </div>
           </div>
         </div>

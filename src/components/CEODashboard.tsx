@@ -5,7 +5,7 @@ import { ToastContainer, useToast } from './Toast';
 import { supabase } from '@/src/lib/supabase';
 
 // --- Types ---
-export type Department = 'HR' | 'Sales' | 'Marketing' | 'Finance' | 'Developer' | 'Operations';
+export type Department = 'HR' | 'Sales' | 'Marketing' | 'Finance' | 'Operations';
 export type Status = 'Pending' | 'In Progress' | 'Completed';
 
 export interface Task {
@@ -14,7 +14,7 @@ export interface Task {
   description: string;
   department: Department;
   priority: 'Low' | 'Medium' | 'High';
-  status: 'waiting_for_ceo' | 'running' | 'completed' | 'failed';
+  status: 'waiting_for_ceo' | 'running' | 'completed' | 'failed' | 'Pending' | 'In Progress' | 'Completed' | 'Failed';
   progress: number;
   created_at: string;
 }
@@ -25,7 +25,7 @@ interface ConnectedTask {
   status: string;
 }
 
-const DEPARTMENTS: Department[] = ['HR', 'Sales', 'Finance', 'Operations', 'Marketing', 'Developer'];
+const DEPARTMENTS: Department[] = ['HR', 'Sales', 'Finance', 'Operations', 'Marketing'];
 
 const DEPT_CONFIG: Record<Department, { badge: string; border: string; glow: string; text: string; icon: string; subtitle: string }> = {
   Sales: {
@@ -67,14 +67,6 @@ const DEPT_CONFIG: Record<Department, { badge: string; border: string; glow: str
     text: 'text-amber-400',
     icon: '💰',
     subtitle: 'Invoices, expenses, revenue tracking'
-  },
-  Developer: {
-    badge: 'bg-cyan-500/10 text-cyan-400',
-    border: 'border-cyan-500/30',
-    glow: 'shadow-[0_0_15px_rgba(6,182,212,0.1)]',
-    text: 'text-cyan-400',
-    icon: '💻',
-    subtitle: 'Code, tools, builds, technical tasks'
   }
 };
 
@@ -185,7 +177,7 @@ export default function CEODashboard() {
 
   // Get the most recent task for each department
   const getActiveTaskForDept = (dept: Department) => {
-    return tasks.find(t => t.department === dept && t.status !== 'Completed');
+    return tasks.find(t => t.department === dept && t.status !== 'Completed' && t.status !== 'completed');
   };
 
   return (
@@ -226,7 +218,7 @@ export default function CEODashboard() {
               const deptConfig = DEPT_CONFIG[task.department] ?? DEPT_CONFIG.Operations;
               const isWaiting = task.status === 'waiting_for_ceo';
               const isRunning = task.status === 'running';
-              const isCompleted = task.status === 'completed';
+              const isCompleted = task.status?.toLowerCase() === 'completed' || task.status === 'Completed';
 
               return (
                 <div key={task.id || idx} className="flex items-center justify-between gap-6 px-6 py-4 border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors">
@@ -282,7 +274,7 @@ export default function CEODashboard() {
               const deptTasks = tasks.filter(t => t.department === dept);
               const activeTask = deptTasks.find(t => t.status === 'running');
               const waitingTask = deptTasks.find(t => t.status === 'waiting_for_ceo');
-              const lastCompletedTask = deptTasks.find(t => t.status === 'completed');
+              const lastCompletedTask = deptTasks.find(t => t.status?.toLowerCase() === 'completed' || t.status === 'Completed');
               
               const isWorking = !!activeTask;
               const isWaiting = !!waitingTask;

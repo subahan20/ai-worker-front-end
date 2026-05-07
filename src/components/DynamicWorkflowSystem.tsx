@@ -13,7 +13,7 @@ import AIAnalysisModal from './AIAnalysisModal';
 import CandidatesTab from './CandidatesTab';
 import MarketingTab from './MarketingTab';
 import SalesTab from './SalesTab';
-export type Department = 'HR' | 'Sales' | 'Finance' | 'Marketing' | 'Developer' | 'Operations';
+export type Department = 'HR' | 'Sales' | 'Finance' | 'Marketing' | 'Operations';
 export type Status = 'Pending' | 'In Progress' | 'Completed';
 
 export interface Task {
@@ -26,7 +26,7 @@ export interface Task {
   created_at: string;
 }
 
-const DEPARTMENTS: Department[] = ['HR', 'Sales', 'Finance', 'Operations', 'Marketing', 'Developer'];
+const DEPARTMENTS: Department[] = ['HR', 'Sales', 'Finance', 'Operations', 'Marketing'];
 
 const AGENT_SPECIFICS = {
   HR: {
@@ -101,19 +101,7 @@ const AGENT_SPECIFICS = {
     icon: '📣',
     subtitle: 'Instagram, content strategy, growth'
   },
-  Developer: {
-    tabName: 'Commits',
-    stats: ['Changes', 'Files', 'Tests'],
-    items: [],
-    insights: 'Code generation agents are reducing boilerplate time by 60%.',
-    results: [],
-    badge: 'bg-cyan-500/10 text-cyan-400',
-    border: 'border-cyan-500/30',
-    glow: 'shadow-[0_0_15px_rgba(6,182,212,0.1)]',
-    text: 'text-cyan-400',
-    icon: '💻',
-    subtitle: 'Code, tools, builds, technical tasks'
-  },
+
   Operations: {
     tabName: 'Deployments',
     stats: ['Uptime', 'Errors', 'Latency'],
@@ -154,7 +142,7 @@ export default function NeuralWorkflowSystem() {
   const [salesInsights, setSalesInsights] = useState<any[]>([]);
   const [opsInsights, setOpsInsights] = useState<any[]>([]);
   const [financeInsights, setFinanceInsights] = useState<any[]>([]);
-  const [devInsights, setDevInsights] = useState<any[]>([]);
+
   const [hrReport, setHrReport] = useState<any>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [selectedRoadmap, setSelectedRoadmap] = useState<{title: string, dept: string, content: any} | null>(null);
@@ -235,7 +223,6 @@ export default function NeuralWorkflowSystem() {
     if (salesInsights.length > 0) depts.add('Sales');
     if (opsInsights.length > 0) depts.add('Operations');
     if (financeInsights.length > 0) depts.add('Finance');
-    if (devInsights.length > 0) depts.add('Developer');
     return depts;
   }, [tasks, connectedTasks, candidates, marketingProfiles, salesInsights, opsInsights]);
 
@@ -301,9 +288,6 @@ export default function NeuralWorkflowSystem() {
     }
     if (selectedDept === 'Finance') {
       fetchFinanceInsights();
-    }
-    if (selectedDept === 'Developer') {
-      fetchDevInsights();
     }
 
     return () => {
@@ -432,18 +416,6 @@ export default function NeuralWorkflowSystem() {
     }
   };
 
-  const fetchDevInsights = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('dev_insights')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setDevInsights(data || []);
-    } catch (err: any) {
-      console.error('Failed to fetch dev insights:', err.message || err);
-    }
-  };
 
   const handleSendToCEO = async (candidate: any) => {
     if (!candidate.evaluation) {
@@ -492,10 +464,7 @@ export default function NeuralWorkflowSystem() {
       if (!aiRes.ok) throw new Error('AI assignment failed');
       const aiData = await aiRes.json();
       if (aiData.error) throw new Error(aiData.error);
-
-      // Default to Engineering if Developer is requested by AI fallback
       let mappedDept = aiData.department as Department;
-      if (mappedDept as any === 'Engineering') mappedDept = 'Developer';
       if (!DEPARTMENTS.includes(mappedDept)) mappedDept = 'Operations';
 
       const saveRes = await fetch('/api/tasks', {
@@ -802,16 +771,6 @@ export default function NeuralWorkflowSystem() {
                             recommendations: latestFinance.recommendations || []
                           };
                         }
-                      } else if (selectedDept === 'Developer') {
-                        const latestDev = devInsights[0];
-                        if (latestDev) {
-                          analysis = {
-                            summary: latestDev.architecture_overview,
-                            strengths: latestDev.tech_stack || [],
-                            weaknesses: latestDev.vulnerabilities || [],
-                            recommendations: [latestDev.scalability_plan]
-                          };
-                        }
                       } else {
                         // Generic department task overview
                         const latestTask = [...tasks, ...connectedTasks]
@@ -917,14 +876,12 @@ export default function NeuralWorkflowSystem() {
                        <h3 className="text-xs font-black uppercase tracking-widest text-[#444]">
                         {selectedDept === 'Operations' ? opsInsights.length : 
                          selectedDept === 'Finance' ? financeInsights.length : 
-                         selectedDept === 'Developer' ? devInsights.length : 
                          (AGENT_SPECIFICS[selectedDept as Department] as typeof AGENT_SPECIFICS['HR']).items.length} {(AGENT_SPECIFICS[selectedDept as Department] as typeof AGENT_SPECIFICS['HR']).tabName.toUpperCase()} · STORED IN DB
                        </h3>
                        <button 
                         onClick={() => {
                           if (selectedDept === 'Operations') fetchOpsInsights();
                           if (selectedDept === 'Finance') fetchFinanceInsights();
-                          if (selectedDept === 'Developer') fetchDevInsights();
                         }}
                         className="text-[10px] font-black text-[#555] uppercase tracking-widest hover:text-white transition-all underline underline-offset-4"
                        >
@@ -967,23 +924,6 @@ export default function NeuralWorkflowSystem() {
                         </div>
                       ))}
 
-                      {selectedDept === 'Developer' && devInsights.map((item: any) => (
-                        <div key={item.id} className="bg-[#0a0a0a] border border-[#1a1a1a] p-8 rounded-[2rem] hover:border-cyan-500/50 transition-all group">
-                          <div className="flex items-center gap-8">
-                            <div className="w-20 h-20 bg-[#151515] border border-white/5 rounded-2xl flex items-center justify-center text-3xl">💻</div>
-                            <div className="space-y-3">
-                              <h4 className="text-xl font-black text-white group-hover:text-cyan-400 transition-colors">Architecture Roadmap: {new Date(item.created_at).toLocaleDateString()}</h4>
-                              <p className="text-sm text-[#555] leading-relaxed line-clamp-2">{item.architecture_overview}</p>
-                              <div className="flex gap-2 flex-wrap">
-                                {item.tech_stack?.map((tech: string) => (
-                                  <span key={tech} className="px-2 py-1 bg-white/5 text-[#555] text-[8px] font-black rounded-md border border-white/5">{tech}</span>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-
                       {/* 2. Fallback to AGENT_SPECIFICS items if they exist */}
                       {(AGENT_SPECIFICS[selectedDept as Department] as typeof AGENT_SPECIFICS['HR']).items.map((item: any) => (
                         <div key={item.id} className="bg-[#0a0a0a] border border-[#1a1a1a] p-8 rounded-[2rem] hover:border-pink-500/50 transition-all group relative overflow-hidden">
@@ -1011,8 +951,7 @@ export default function NeuralWorkflowSystem() {
 
                       {/* 3. Empty State */}
                       {((selectedDept === 'Operations' && opsInsights.length === 0) ||
-                        (selectedDept === 'Finance' && financeInsights.length === 0) ||
-                        (selectedDept === 'Developer' && devInsights.length === 0)) &&
+                        (selectedDept === 'Finance' && financeInsights.length === 0)) &&
                         AGENT_SPECIFICS[selectedDept].items.length === 0 && (
                         <div className="p-20 text-center space-y-4">
                           <div className="text-4xl">📭</div>
@@ -1103,7 +1042,7 @@ export default function NeuralWorkflowSystem() {
                                            Download PDF
                                          </button>
                                          <button 
-                                           onClick={generateHRReport}
+                                           onClick={() => generateHRReport()}
                                            className="px-6 py-2.5 bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-purple-500/20 transition-all"
                                          >
                                            Regenerate
@@ -1456,47 +1395,7 @@ export default function NeuralWorkflowSystem() {
                                </div>
                             </div>
                           );
-                        } else if (selectedDept === 'Developer') {
-                          return (
-                            <div className="space-y-8">
-                               <div className="bg-[#0f0f0f] border border-[#1a1a1a] p-8 rounded-[2rem] hover:border-cyan-500/30 transition-all space-y-6">
-                                  <div className="flex gap-6 items-center">
-                                    <div className="w-16 h-16 bg-cyan-500/10 rounded-2xl flex items-center justify-center text-3xl shadow-inner border border-cyan-500/20">
-                                      💻
-                                    </div>
-                                    <div>
-                                      <h4 className="text-xl font-bold text-white tracking-tight">Technical Scaling Roadmap</h4>
-                                      <p className="text-[10px] font-black uppercase tracking-widest text-cyan-500 mt-1">Agentic Infrastructure & Automation</p>
-                                    </div>
-                                  </div>
-                                  <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a]">
-                                     <p className="text-[9px] font-black text-cyan-400 uppercase tracking-widest mb-2">Build Pipeline</p>
-                                     <p className="text-sm text-slate-300 leading-relaxed font-medium">Migrating to a fully agentic CI/CD pipeline. Goal: Zero-manual deployment for core microservices.</p>
-                                  </div>
-                               </div>
-                               {devInsights[0] && (
-                                 <div className="bg-[#0f0f0f] border border-cyan-500/20 p-8 rounded-[2rem] shadow-[0_0_20px_rgba(6,182,212,0.05)] space-y-6">
-                                    <div className="flex justify-between items-start">
-                                      <div className="flex gap-6 items-center">
-                                        <div className="w-16 h-16 bg-cyan-500/10 rounded-2xl flex items-center justify-center text-3xl shadow-inner border border-cyan-500/20">
-                                          🚀
-                                        </div>
-                                        <div>
-                                          <h4 className="text-xl font-bold text-white tracking-tight">Technical Roadmap</h4>
-                                          <p className="text-[10px] font-black uppercase tracking-widest text-cyan-500 mt-1">Scale & Security</p>
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a]">
-                                       <p className="text-[9px] font-black text-cyan-400 uppercase tracking-widest mb-2">Architecture Overview</p>
-                                       <p className="text-sm text-slate-300 leading-relaxed font-medium">{devInsights[0].architecture_overview}</p>
-                                    </div>
-                                 </div>
-                               )}
-                            </div>
-                          );
-                        }
-
+                         }
                         return (
                           <div className="p-10 text-center text-[#555] italic bg-[#0f0f0f] border border-[#1a1a1a] rounded-[2rem]">
                             Select a department to view strategic ideas.
@@ -1607,7 +1506,6 @@ export default function NeuralWorkflowSystem() {
           fetchSalesInsights();
           fetchOpsInsights();
           fetchFinanceInsights();
-          fetchDevInsights();
         }}
       />
 

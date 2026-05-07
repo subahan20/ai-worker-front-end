@@ -21,7 +21,7 @@ export default function TaskCard({
 }) {
   const status = (task.status || '').toLowerCase();
   const isRunning = status === 'running';
-  const isCompleted = status === 'completed';
+  const isCompleted = status?.toLowerCase() === 'completed' || status === 'Completed';
   const isWaiting = status === 'waiting_for_ceo';
   const isFailed = status === 'failed';
   const progress = isCompleted ? 100 : (task.progress || 0);

@@ -32,16 +32,18 @@ export async function POST(req: NextRequest) {
 
     // 3. Prepare AI Prompt
     const prompt = `
-      You are an elite Instagram Marketing Strategist. Analyze these viral reels and generate a comprehensive growth report.
+      You are an elite Instagram Marketing Strategist specializing in VIRAL GROWTH. 
+      Analyze these TOP-PERFORMING viral reels and generate a comprehensive growth report based ONLY on high-retention patterns.
       
       USER: ${username}
       VIRAL REELS DATA: ${JSON.stringify(viralReels)}
 
       REQUIREMENTS:
       - Content must be professional, actionable, and 100% dynamic.
-      - Identify the specific "hooks" used in the viral reels.
-      - Generate 3 new content ideas with scripts and captions.
-      - Suggest specific CTA (Call to Action) strategies.
+      - DEEP HOOK ANALYSIS: Identify exactly why these reels hit viral status (first 3 seconds).
+      - VIRAL RETENTION: Analyze the pacing and visual patterns that kept viewers watching.
+      - Generate 3 new content ideas with high-fidelity scripts and viral captions.
+      - Suggest specific CTA (Call to Action) strategies optimized for conversion.
 
       RETURN JSON STRUCTURE:
       {
