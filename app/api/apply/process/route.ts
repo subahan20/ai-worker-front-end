@@ -108,8 +108,6 @@ Return ONLY valid JSON in this exact structure:
       message: 'Evaluation generated and waiting for CEO approval.'
     });
 
-    return NextResponse.json({ success: true, evaluation: aiOutput.evaluation });
-
   } catch (error: any) {
     console.error('Process error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
