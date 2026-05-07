@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from '@/src/lib/supabase';
 
 export async function GET() {
   const { data, error } = await supabase
@@ -25,7 +20,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { data, error } = await supabase
-    .from('tasks')
+    .from('connected_tasks')
     .insert([{ 
       title, 
       description, 

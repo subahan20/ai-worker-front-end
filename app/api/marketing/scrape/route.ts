@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
+const getSupabase = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     ];
 
     // 3. Store in database
-    const { error: dbError } = await supabase
+    const { error: dbError } = await getSupabase()
       .from('marketing_reels')
       .upsert(mockReels, { onConflict: 'reel_url' });
 
