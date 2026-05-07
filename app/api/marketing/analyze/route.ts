@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
 
-const supabase = createClient(
+const getSupabase = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY || process.env.GROQ_API,
+const getGroq = () => new Groq({
+  apiKey: process.env.GROQ_API_KEY || process.env.GROQ_API || '',
 });
 
 export async function POST(req: NextRequest) {
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     if (!username) return NextResponse.json({ error: 'Username is required' }, { status: 400 });
 
     // 1. Fetch reels for this user
-    const { data: reels, error: reelError } = await supabase
+    const { data: reels, error: reelError } = await getSupabase()
       .from('marketing_reels')
       .select('*')
       .eq('username', username);
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     `;
 
     // 4. Generate AI Analysis via Groq
-    const aiResponse = await groq.chat.completions.create({
+    const aiResponse = await getGroq().chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" }
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
     const analysisContent = JSON.parse(aiResponse.choices[0].message.content || '{}');
 
     // 5. Store AI Report in Database
-    const { data: report, error: reportError } = await supabase
+    const { data: report, error: reportError } = await getSupabase()
       .from('marketing_ai_reports')
       .insert({
         username,

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { supabase } from '@/src/lib/supabase';
 
-const groq = new Groq({ apiKey: process.env.GROQ_API });
+const getGroq = () => new Groq({ apiKey: process.env.GROQ_API || '' });
 
 export async function POST(req: Request) {
   try {
@@ -64,7 +64,7 @@ RULES:
 - Be critical and precise with the percentage.
 `;
 
-    const completion = await groq.chat.completions.create({
+    const completion = await getGroq().chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'llama-3.3-70b-versatile',
       response_format: { type: 'json_object' }

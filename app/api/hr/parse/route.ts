@@ -9,7 +9,7 @@ if (pdfjs.GlobalWorkerOptions) {
   pdfjs.GlobalWorkerOptions.workerSrc = '';
 }
 
-const groq = new Groq({ apiKey: process.env.GROQ_API });
+const getGroq = () => new Groq({ apiKey: process.env.GROQ_API || '' });
 
 export async function POST(req: Request) {
   console.log('--- STARTING RESUME PARSE REQUEST ---');
@@ -80,7 +80,7 @@ Return ONLY a valid JSON object in this exact structure:
 }
 `;
 
-    const completion = await groq.chat.completions.create({
+    const completion = await getGroq().chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'llama-3.3-70b-versatile',
       response_format: { type: 'json_object' }

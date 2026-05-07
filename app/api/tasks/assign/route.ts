@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 
-const groq = new Groq({ apiKey: process.env.GROQ_API });
+const getGroq = () => new Groq({ apiKey: process.env.GROQ_API || '' });
 
 const SYSTEM_PROMPT = `You are an AI task router for a company. Analyze the task description and return a JSON object with exactly these fields:
 - "department": one of "HR", "Sales", "Marketing", "Engineering", "Operations"
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const completion = await groq.chat.completions.create({
+    const completion = await getGroq().chat.completions.create({
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: description },

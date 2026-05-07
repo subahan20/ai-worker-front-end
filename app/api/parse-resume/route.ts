@@ -8,7 +8,7 @@ import { supabase } from '@/src/lib/supabase';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const groq = new Groq({ apiKey: process.env.GROQ_API });
+const getGroq = () => new Groq({ apiKey: process.env.GROQ_API || '' });
 
 export async function POST(req: Request) {
   const reqId = Math.random().toString(36).substring(7);
@@ -86,7 +86,7 @@ export async function POST(req: Request) {
     try {
       const prompt = `Extract details from this resume. Return ONLY JSON. Fields: name, email, phone, role, experience_years, skills, education, companies, projects. \n\nText:\n${extractedText.slice(0, 10000)}`;
 
-      const completion = await groq.chat.completions.create({
+      const completion = await getGroq().chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
         model: 'llama-3.3-70b-versatile',
         response_format: { type: 'json_object' }
