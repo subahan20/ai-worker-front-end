@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { supabase } from '@/src/lib/supabase';
-import pdf from 'pdf-parse';
+import * as pdf from 'pdf-parse';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 // CRITICAL: Disable worker for Node.js to prevent "Cannot find module 'pdf.worker.mjs'"
@@ -37,7 +37,8 @@ export async function POST(req: Request) {
     // 2. Extract Text using standard pdf-parse function
     let resumeText = '';
     try {
-      const textResult = await pdf(buffer);
+      const pdfParser = (pdf as any).default || pdf;
+      const textResult = await pdfParser(buffer);
       resumeText = textResult.text;
       console.log('Extraction complete, text length:', resumeText.length);
     } catch (extractErr: any) {
