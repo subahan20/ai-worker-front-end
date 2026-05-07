@@ -10,6 +10,8 @@ import {
   resetWorkflow,
 } from "@/src/store/slices/workflowSlice";
 import type { Department } from "@/src/types/agent";
+import { TaskAssignmentModal } from "./CEOAgentTaskAssignment";
+import { useState } from "react";
 
 const ORDERED_DEPARTMENTS: Department[] = [
   "CEO",
@@ -28,6 +30,7 @@ export function WorkflowDashboard() {
   const { requestId, approved, autoStarted, loading, error, agents } = useAppSelector(
     (state) => state.workflow
   );
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
 
   const queueItems = approved
     ? [
@@ -89,18 +92,28 @@ export function WorkflowDashboard() {
               </div>
             </div>
 
-            <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-3">
-              <div className="rounded-xl border border-white/8 bg-white/3 px-4 py-3">
-                <p className="text-slate-500">Request ID</p>
-                <p className="mt-1 font-medium text-white">{requestId ?? "Not created"}</p>
-              </div>
-              <div className="rounded-xl border border-white/8 bg-white/3 px-4 py-3">
-                <p className="text-slate-500">Approval</p>
-                <p className="mt-1 font-medium text-white">{approved ? "Approved" : "Pending"}</p>
-              </div>
-              <div className="rounded-xl border border-white/8 bg-white/3 px-4 py-3">
-                <p className="text-slate-500">Departments</p>
-                <p className="mt-1 font-medium text-white">{autoStarted.length}/6 started</p>
+            <div className="flex flex-col gap-4">
+              <button
+                className="w-full rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-500 active:scale-95 flex items-center justify-center gap-2"
+                onClick={() => setIsAssignModalOpen(true)}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                Assign Task
+              </button>
+
+              <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-3">
+                <div className="rounded-xl border border-white/8 bg-white/3 px-4 py-3">
+                  <p className="text-slate-500">Request ID</p>
+                  <p className="mt-1 font-medium text-white">{requestId ?? "Not created"}</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/3 px-4 py-3">
+                  <p className="text-slate-500">Approval</p>
+                  <p className="mt-1 font-medium text-white">{approved ? "Approved" : "Pending"}</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/3 px-4 py-3">
+                  <p className="text-slate-500">Departments</p>
+                  <p className="mt-1 font-medium text-white">{autoStarted.length}/6 started</p>
+                </div>
               </div>
             </div>
           </div>
@@ -158,6 +171,17 @@ export function WorkflowDashboard() {
           </section>
         </div>
       </section>
+
+      <TaskAssignmentModal 
+        isOpen={isAssignModalOpen} 
+        onClose={() => setIsAssignModalOpen(false)} 
+        requestId={requestId}
+        onTaskAssigned={(department) => {
+          if (requestId) {
+            dispatch(refreshWorkflowStatus(requestId));
+          }
+        }}
+      />
     </main>
   );
 }
