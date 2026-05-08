@@ -18,6 +18,9 @@ export function getSupabase(): SupabaseClient {
 // Uses a Proxy so the instance is only created on first property access.
 export const supabase = new Proxy({} as SupabaseClient, {
   get(_target, prop) {
+    if (prop === '$$typeof' || prop === 'then' || prop === 'toJSON') {
+      return undefined;
+    }
     return (getSupabase() as any)[prop];
   },
 });
