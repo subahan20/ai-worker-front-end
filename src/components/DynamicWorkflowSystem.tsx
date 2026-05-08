@@ -151,6 +151,24 @@ export default function NeuralWorkflowSystem() {
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [selectedTaskForAnalysis, setSelectedTaskForAnalysis] = useState<{id: string, dept: string, title: string} | null>(null);
 
+  const inferDiscipline = (candidate: any): string => {
+    const rawRole = String(candidate?.role || '').trim();
+    const role = rawRole.toLowerCase();
+    if (role && role !== 'unspecified' && role !== 'unspecified role' && role !== 'unknown') {
+      const first = rawRole.split(/\s+/)[0];
+      return first || 'Generalist';
+    }
+    const skills = Array.isArray(candidate?.strengths) ? candidate.strengths : [];
+    const joined = skills.join(' ').toLowerCase();
+    if (/(react|next|javascript|typescript|html|css|frontend|ui)/.test(joined)) return 'Frontend';
+    if (/(node|express|api|backend|postgres|mongodb|sql|database)/.test(joined)) return 'Backend';
+    if (/(marketing|seo|content|growth|campaign)/.test(joined)) return 'Marketing';
+    if (/(sales|lead|crm|pipeline|revenue)/.test(joined)) return 'Sales';
+    if (/(finance|account|budget|invoice|cashflow)/.test(joined)) return 'Finance';
+    if (/(hr|recruit|talent|people|hiring)/.test(joined)) return 'HR';
+    return 'Generalist';
+  };
+
   const fetchHRReport = async () => {
     try {
       const res = await fetch(apiUrl('/hr/report/generate'));
@@ -234,13 +252,16 @@ export default function NeuralWorkflowSystem() {
   useEffect(() => {
     if (selectedDept !== 'HR' || activeTab !== 'Ideas') return;
     if (isGeneratingReport || hrReport) return;
-    
-    const analyzedCount = candidates.filter(c => c.candidate_analysis && c.candidate_analysis.length > 0).length;
+    const analyzedCount = allHRData.filter((c: any) => {
+      const analysis = Array.isArray(c?.candidate_analysis) ? c.candidate_analysis[0] : c?.analysis;
+      const decision = String(analysis?.decision || '').toUpperCase();
+      return Boolean(analysis) && (decision === 'SHORTLISTED' || decision === 'REJECTED' || decision === 'PARSING_FAILED');
+    }).length;
 
     if (analyzedCount > 0) {
       generateHRReport(true); // Force generation since we have analyzed candidates
     }
-  }, [selectedDept, activeTab, candidates, hrReport, isGeneratingReport]);
+  }, [selectedDept, activeTab, allHRData, hrReport, isGeneratingReport]);
 
 
   const fetchCandidates = async () => {
@@ -892,21 +913,22 @@ export default function NeuralWorkflowSystem() {
                                      </div>
                                      <div className="space-y-2">
                                        <h4 className="text-lg font-black text-white uppercase tracking-tight">
-                                         {candidates.some(c => {
-                                            const dec = c.candidate_analysis?.[0]?.decision?.toUpperCase();
-                                            return dec === 'SHORTLISTED' || dec === 'SELECTED' || dec === 'HIRE';
+                                         {allHRData.some((c: any) => {
+                                            const analysis = Array.isArray(c?.candidate_analysis) ? c.candidate_analysis[0] : c?.analysis;
+                                            const dec = String(analysis?.decision || '').toUpperCase();
+                                            return dec === 'SHORTLISTED' || dec === 'SELECTED' || dec === 'HIRE' || dec === 'REJECTED';
                                           })
                                            ? 'Auto-Generating CEO Report...'
                                            : 'Awaiting Candidate Analysis'}
                                        </h4>
                                        <p className="text-[11px] text-[#444] font-bold uppercase tracking-widest max-w-[400px] mx-auto leading-relaxed">
-                                         {candidates.length > 0
+                                         {allHRData.length > 0
                                            ? 'AI has analyzed candidates but none are flagged as "Shortlisted" yet. You can manually generate a report for all analyzed talent.'
                                            : 'Add candidates in the Data tab. AI will auto-analyze and generate this report.'}
                                        </p>
                                      </div>
                                      
-                                     {candidates.length > 0 && !isGeneratingReport && (
+                                     {allHRData.length > 0 && !isGeneratingReport && (
                                        <button 
                                          onClick={() => generateHRReport(true)}
                                          className="px-10 py-4 bg-white text-black text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-purple-500 hover:text-white transition-all shadow-xl active:scale-95"
@@ -967,7 +989,7 @@ export default function NeuralWorkflowSystem() {
                                        <div className="p-6 bg-blue-500/5 border border-blue-500/10 rounded-[2rem] space-y-2">
                                           <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Top Discipline</p>
                                           <p className="text-4xl font-black text-white italic tracking-tighter uppercase truncate">
-                                            {hrReport.shortlisted_candidates?.[0]?.role?.split(' ')[0] || 'ENGINEERING'}
+                                            {inferDiscipline(hrReport.shortlisted_candidates?.[0])}
                                           </p>
                                        </div>
                                     </div>
