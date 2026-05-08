@@ -4,8 +4,13 @@ import React, { useState, useEffect } from 'react';
 import { useAppSelector } from '../redux/hooks';
 import { selectMarketingData } from '../redux/slices/tasksSlice';
 
-export default function MarketingTab() {
-  const reports = useAppSelector(selectMarketingData);
+interface MarketingTabProps {
+  profiles?: any[];
+}
+
+export default function MarketingTab({ profiles }: MarketingTabProps) {
+  const reportsFromStore = useAppSelector(selectMarketingData);
+  const reports = profiles ?? reportsFromStore;
   const [selectedReport, setSelectedReport] = useState<any>(null);
 
   useEffect(() => {

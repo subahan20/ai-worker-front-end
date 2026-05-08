@@ -129,6 +129,12 @@ export const selectMarketingData = (state: RootState) => {
   const marketingTasks = selectTasksByDepartment('Marketing')(state);
   return marketingTasks.map(t => ({
     ...t,
+    handle_name: (t as any)?.metadata?.handle_name || (t as any)?.metadata?.profile_name || String((t as any)?.title || 'Marketing Profile'),
+    platform: (t as any)?.metadata?.platform || 'Instagram',
+    followers: (t as any)?.metadata?.followers || null,
+    marketing_analysis: Array.isArray((t as any).marketing_analysis)
+      ? (t as any).marketing_analysis
+      : ((t as any).analysis ? [(t as any).analysis] : []),
     viral_reels: t.analysis?.reels || [],
     insight: t.analysis?.strategy || ''
   }));

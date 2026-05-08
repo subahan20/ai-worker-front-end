@@ -7,8 +7,14 @@ import { selectHRData } from '../redux/slices/tasksSlice';
 
 type FilterType = 'ALL' | 'SHORTLISTED' | 'REJECTED';
 
-export default function CandidatesTab() {
-  const candidates = useAppSelector(selectHRData);
+interface CandidatesTabProps {
+  candidates?: any[];
+  onRefresh?: () => void;
+}
+
+export default function CandidatesTab({ candidates: candidatesProp, onRefresh }: CandidatesTabProps) {
+  const candidatesFromStore = useAppSelector(selectHRData);
+  const candidates = candidatesProp ?? candidatesFromStore;
   const [filter, setFilter] = useState<FilterType>('ALL');
 
   const normalizedCandidates = useMemo(() => {
@@ -83,7 +89,7 @@ export default function CandidatesTab() {
           </div>
         ) : (
           filteredCandidates.map((candidate) => (
-            <CandidateCard key={candidate.id} candidate={candidate} onRefresh={() => {}} />
+            <CandidateCard key={candidate.id} candidate={candidate} onRefresh={onRefresh || (() => {})} />
           ))
         )}
       </div>
