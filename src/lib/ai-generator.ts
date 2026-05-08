@@ -1,7 +1,7 @@
 import Groq from 'groq-sdk';
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY || process.env.GROQ_API,
+const getGroq = () => new Groq({
+  apiKey: process.env.GROQ_API_KEY || process.env.GROQ_API || '',
 });
 
 export async function generateDepartmentOverview(dept: string, taskTitle: string, inputData: any) {
@@ -31,7 +31,7 @@ export async function generateDepartmentOverview(dept: string, taskTitle: string
   `;
 
   try {
-    const response = await groq.chat.completions.create({
+    const response = await getGroq().chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" }
