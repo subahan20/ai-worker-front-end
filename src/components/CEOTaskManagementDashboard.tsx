@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { apiUrl } from '@/src/lib/api';
 
 /**
  * Full-Stack CEO Task Management Dashboard
@@ -227,7 +228,7 @@ export default function CEOTaskManagementDashboard() {
   const fetchTasks = async () => {
     try {
       setIsLoading(true);
-      const response = await axios.get('/api/tasks');
+      const response = await axios.get(apiUrl('/tasks'));
       if (response.data.success) {
         setDbEntries(response.data.data);
       }
@@ -254,7 +255,7 @@ export default function CEOTaskManagementDashboard() {
   const handleRunPerformance = async () => {
     try {
       setIsSubmitting(true);
-      const response = await axios.post('/api/tasks/execute');
+      const response = await axios.post(apiUrl('/tasks/execute'));
       if (response.data.success) {
         alert("Performance Started! All agents are now executing their tasks.");
         fetchTasks();
@@ -272,7 +273,7 @@ export default function CEOTaskManagementDashboard() {
     
     try {
       setIsSubmitting(true);
-      const response = await axios.delete('/api/tasks/reset');
+      const response = await axios.delete(apiUrl('/tasks/reset'));
       if (response.data.success) {
         alert("System Reset Complete! All data cleared.");
         fetchTasks();
@@ -288,7 +289,7 @@ export default function CEOTaskManagementDashboard() {
   const handleStartWork = async (entry: DBTaskEntry) => {
     try {
       setIsSubmitting(true);
-      const response = await axios.get(`/api/tasks/${entry._id}`);
+      const response = await axios.get(apiUrl(`/tasks/${entry._id}`));
       if (response.data.success) {
         setWorkerModal({ 
           isOpen: true, 
@@ -309,7 +310,7 @@ export default function CEOTaskManagementDashboard() {
   const updateStepStatus = async (id: string, stepIndex: number, stepStatus: string) => {
     try {
       setIsSubmitting(true);
-      const response = await axios.patch(`/api/tasks/${id}`, { stepIndex, stepStatus });
+      const response = await axios.patch(apiUrl(`/tasks/${id}`), { stepIndex, stepStatus });
       if (response.data.success) {
         setWorkerModal(prev => ({ ...prev, task: response.data.data }));
         fetchTasks();
@@ -324,7 +325,7 @@ export default function CEOTaskManagementDashboard() {
   const updateTaskStatus = async (id: string, status: string) => {
     try {
       setIsSubmitting(true);
-      const response = await axios.patch(`/api/tasks/${id}`, { status });
+      const response = await axios.patch(apiUrl(`/tasks/${id}`), { status });
       if (response.data.success) {
         setWorkerModal(prev => ({ ...prev, task: response.data.data, isOpen: status !== 'completed' }));
         fetchTasks();
@@ -345,7 +346,7 @@ export default function CEOTaskManagementDashboard() {
     }
     try {
       setIsSubmitting(true);
-      const response = await axios.post('/api/tasks', { department: selectedDept, tasks: validTasks, details });
+      const response = await axios.post(apiUrl('/tasks'), { department: selectedDept, tasks: validTasks, details });
       if (response.data.success) {
         handleCloseModal();
         fetchTasks();

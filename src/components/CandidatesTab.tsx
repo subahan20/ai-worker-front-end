@@ -1,33 +1,43 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
-import { supabase } from '@/src/lib/supabase';
+import React, { useState, useMemo } from 'react';
 import CandidateCard from './CandidateCard';
+import { useAppSelector } from '../redux/hooks';
+import { selectHRData } from '../redux/slices/tasksSlice';
 
 type FilterType = 'ALL' | 'SHORTLISTED' | 'REJECTED';
 
-interface CandidatesTabProps {
-  candidates: any[];
-  onRefresh: () => void;
-}
-
-export default function CandidatesTab({ candidates, onRefresh }: CandidatesTabProps) {
+export default function CandidatesTab() {
+  const candidates = useAppSelector(selectHRData);
   const [filter, setFilter] = useState<FilterType>('ALL');
 
+  const normalizedCandidates = useMemo(() => {
+    // De-duplicate by candidate/application id; polling + multiple HR tasks
+    // can otherwise render the same candidate many times and trigger repeated analysis calls.
+    const byId = new Map<string, any>();
+    for (const candidate of candidates) {
+      const candidateId = candidate?.id ? String(candidate.id) : '';
+      if (!candidateId) continue;
+      if (!byId.has(candidateId)) {
+        byId.set(candidateId, candidate);
+      }
+    }
+    return Array.from(byId.values());
+  }, [candidates]);
+
   const filteredCandidates = useMemo(() => {
-    return candidates.filter(candidate => {
+    return normalizedCandidates.filter(candidate => {
       if (filter === 'ALL') return true;
       
-      const analysis = candidate.candidate_analysis && candidate.candidate_analysis.length > 0 
-        ? candidate.candidate_analysis[0] 
-        : null;
+      const analysis = candidate.analysis && Array.isArray(candidate.analysis) && candidate.analysis.length > 0 
+        ? candidate.analysis[0] 
+        : candidate.analysis; // Fallback if analysis is already an object
 
-      if (!analysis) return false;
+      if (!analysis || !analysis.decision) return false;
 
-      // Ensure case-insensitive comparison or match the new uppercase standard
       return analysis.decision.toUpperCase() === filter;
     });
-  }, [candidates, filter]);
+  }, [normalizedCandidates, filter]);
 
   return (
     <div className="space-y-10 animate-in fade-in duration-700">
@@ -38,7 +48,7 @@ export default function CandidatesTab({ candidates, onRefresh }: CandidatesTabPr
           <div className="w-1.5 h-10 bg-blue-600 rounded-full" />
           <div>
             <h3 className="text-sm font-black text-white uppercase tracking-[0.2em]">Candidate Radar</h3>
-            <p className="text-[9px] text-[#444] font-bold uppercase tracking-widest mt-1">Filtering {candidates.length} Global Applications</p>
+            <p className="text-[9px] text-[#444] font-bold uppercase tracking-widest mt-1">Filtering {normalizedCandidates.length} Global Applications</p>
           </div>
         </div>
 
@@ -73,7 +83,7 @@ export default function CandidatesTab({ candidates, onRefresh }: CandidatesTabPr
           </div>
         ) : (
           filteredCandidates.map((candidate) => (
-            <CandidateCard key={candidate.id} candidate={candidate} onRefresh={onRefresh} />
+            <CandidateCard key={candidate.id} candidate={candidate} onRefresh={() => {}} />
           ))
         )}
       </div>

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '@/src/lib/supabase';
+import { apiUrl } from '@/src/lib/api';
 
 /**
  * CEOAgentTaskAssignment Component
@@ -260,10 +261,10 @@ export function TaskAssignmentModal({
         title: t,
         department: state.department,
         description: `Manual assignment: ${state.department} workflow`,
-        priority: 'MED', // Default for manual
-        steps: [t],
-        current_step: -1,
-        status: 'PENDING'
+        priority: 'HIGH', 
+        status: 'waiting_for_ceo',
+        progress: 0,
+        created_at: new Date().toISOString()
       }));
 
       const { error: dbError } = await supabase
@@ -274,7 +275,7 @@ export function TaskAssignmentModal({
 
       // 2. Trigger backend notification if needed
       if (requestId) {
-        await fetch('/api/workflow/start', {
+        await fetch(apiUrl('/workflow/start'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ requestId, department: state.department })

@@ -1,14 +1,18 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { supabase } from '@/src/lib/supabase';
-import TaskCard, { WorkerTask } from './TaskCard';
+import React, { useState } from 'react';
+import TaskCard from './TaskCard';
 import TaskDetailModal from './TaskDetailModal';
 import { useToast } from './Toast';
+import { useGetTasksQuery, useApproveTasksMutation } from '../redux/api/tasksApi';
 
 export default function TaskQueue() {
-  const [tasks, setTasks] = useState<WorkerTask[]>([]);
+  const { data: tasks = [], isLoading } = useGetTasksQuery(undefined, {
+    pollingInterval: 5000,
+  });
+  const [approveTasks] = useApproveTasksMutation();
   const [isApproving, setIsApproving] = useState(false);
+
   const [detailModal, setDetailModal] = useState<{ isOpen: boolean; id: string | null; title: string }>({ 
     isOpen: false, 
     id: null, 
@@ -20,11 +24,7 @@ export default function TaskQueue() {
     if (isApproving) return;
     setIsApproving(true);
     try {
-      const res = await fetch('/api/tasks/approve', { method: 'POST' });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Approval failed');
-      }
+      await approveTasks().unwrap();
       addToast('All tasks approved and starting simulation...', 'success');
     } catch (err: any) {
       console.error('Approve all error:', err);
@@ -34,55 +34,16 @@ export default function TaskQueue() {
     }
   };
 
-  useEffect(() => {
-    fetchTasks();
-
-    // 1. Listen to manual CEO tasks
-    const manualChannel = supabase
-      .channel('tasks_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => fetchTasks())
-      .subscribe();
-
-    // 2. Listen to connected automated tasks
-    const connectedChannel = supabase
-      .channel('connected_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'connected_tasks' }, () => fetchTasks())
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(manualChannel);
-      supabase.removeChannel(connectedChannel);
-    };
-  }, []);
-
-  const fetchTasks = async () => {
-    try {
-      // 1. Fetch from CEO-controlled tasks
-      const { data: manualTasks, error: mError } = await supabase
-        .from('tasks')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      // 2. Fetch from automated connected tasks
-      const { data: connectedTasks, error: cError } = await supabase
-        .from('connected_tasks')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (mError) console.error('Tasks error:', mError);
-      if (cError) console.error('Connected tasks error:', cError);
-
-      // Merge and sort by created_at
-      const allTasks = [...(manualTasks || []), ...(connectedTasks || [])]
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-      setTasks(allTasks as any);
-    } catch (err) {
-      console.error('Unified fetch error:', err);
-    }
-  };
-
   const pendingCount = tasks.filter(t => (t.status as string || '').toLowerCase() === 'waiting_for_ceo').length;
+
+  if (isLoading && tasks.length === 0) {
+    return (
+      <div className="py-20 text-center">
+        <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-slate-500 text-xs font-black uppercase tracking-widest">Synchronizing Command Center...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -102,7 +63,7 @@ export default function TaskQueue() {
               disabled={isApproving}
               className="px-6 py-2.5 bg-orange-600 hover:bg-orange-500 disabled:bg-orange-800 text-white text-[10px] font-black rounded-xl uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-orange-600/20 flex items-center gap-2"
             >
-              {isApproving ? 'Approving...' : '🚀 Apprrove'}
+              {isApproving ? 'Approving...' : '🚀 Approve All'}
             </button>
           )}
 

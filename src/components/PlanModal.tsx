@@ -5,6 +5,7 @@ import Modal from './Modal';
 import DynamicForm from './DynamicForm';
 import { useToast } from './Toast';
 import { supabase } from '@/src/lib/supabase';
+import { apiUrl } from '@/src/lib/api';
 
 interface PlanModalProps {
   isOpen: boolean;
@@ -62,10 +63,10 @@ export default function PlanModal({ isOpen, onClose, onPlanCreated }: PlanModalP
         const { data: application, error: appError } = await supabase
           .from('applications')
           .insert([{
-            name: 'Processing...',
-            email: 'parsing@ai.com',
+            name: null,
+            email: null,
             role: formData.role || 'Unspecified Role',
-            experience: '0',
+            experience: null,
             resume_url: publicUrl,
             department: 'HR'
           }])
@@ -83,7 +84,7 @@ export default function PlanModal({ isOpen, onClose, onPlanCreated }: PlanModalP
 
         // 3. Trigger Autonomous Parsing API (SERVER-SIDE ONLY)
         addToast('🤖 AI is parsing resume...', 'loading');
-        const parseRes = await fetch('/api/parse-resume', {
+        const parseRes = await fetch(apiUrl('/parse-resume'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -106,32 +107,69 @@ export default function PlanModal({ isOpen, onClose, onPlanCreated }: PlanModalP
           throw new Error(`Parsing API Error: ${errorMessage}`);
         }
 
+        const parsePayload = await parseRes.json().catch(() => null);
+        if (!parsePayload?.success || !parsePayload?.data) {
+          throw new Error('Parsed resume payload is missing');
+        }
+
+        // Persist parser output into tasks as the single dashboard source.
+        const taskSyncRes = await fetch(apiUrl('/tasks/from-resume'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            applicationId: application.id,
+            resumeUrl: publicUrl,
+            parsedData: parsePayload.data,
+            department: 'HR',
+            title: `Resume Review: ${parsePayload.data?.name || 'Candidate'}`,
+            description: 'Parsed resume details synced into tasks.',
+          }),
+        });
+        if (!taskSyncRes.ok) {
+          const taskErr = await taskSyncRes.json().catch(() => ({}));
+          throw new Error(taskErr.error || 'Failed to sync parsed data to tasks');
+        }
+
+        // 4. Trigger HR analysis so candidate-linked HR tasks are created with profile context.
+        const analyzeRes = await fetch(apiUrl('/analysis/hr'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ candidateId: application.id })
+        });
+
+        if (!analyzeRes.ok) {
+          const analyzeErr = await analyzeRes.json().catch(() => ({}));
+          throw new Error(analyzeErr.error || 'Candidate analysis failed');
+        }
+
         addToast('✅ Resume parsed and candidate profile created!', 'success');
       } else if (department === 'Marketing') {
-        // SPECIAL CASE: Marketing Task Creation
-        const { error: taskError } = await supabase
-          .from('tasks')
-          .insert([{
+        // SPECIAL CASE: Marketing Task Creation (must use backend /tasks so TaskQueue sees it)
+        const res = await fetch(apiUrl('/tasks'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             title: `Instagram Viral Audit: ${formData.companyName}`,
             description: `Autonomous audit of ${formData.instagramUrl} to extract viral patterns and content ideas.`,
             department: 'Marketing',
-            type: 'Marketing',
-            priority: 'High',
-            status: 'waiting_for_ceo',
-            metadata: {
+            priority: 'HIGH',
+            details: {
               company_name: formData.companyName,
               instagram_url: formData.instagramUrl,
               business_type: formData.businessType,
               budget: formData.budget,
               competitors: formData.competitors
             }
-          }]);
-
-        if (taskError) throw taskError;
+          })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || 'Failed to create marketing task');
+        }
         addToast('🚀 Marketing Task queued for CEO approval!', 'success');
       } else {
         // STANDARD CASE: Other Departments
-        const endpoint = department === 'Sales' ? '/api/sales/analyze' : '/api/plan/generate';
+        const endpoint = department === 'Sales' ? apiUrl('/sales/analyze') : apiUrl('/plan/generate');
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

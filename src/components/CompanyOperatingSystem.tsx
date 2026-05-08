@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/src/lib/supabase';
+import { apiUrl } from '@/src/lib/api';
 
 type Department = 'HR' | 'Sales' | 'Finance' | 'Marketing';
 
@@ -67,7 +68,7 @@ export default function CompanyOperatingSystem() {
   const runSystemCheck = async () => {
     setSystemStatus('RUNNING');
     try {
-      const res = await fetch('/api/system/run', { method: 'POST' });
+      const res = await fetch(apiUrl('/system/run'), { method: 'POST' });
       const data = await res.json();
       if (!res.ok) alert(`❌ Check Failed: ${data.error}`);
     } catch (err: any) {
@@ -80,7 +81,7 @@ export default function CompanyOperatingSystem() {
   const executeTaskStep = async (taskId: string) => {
     setExecutingTaskId(taskId);
     try {
-      const res = await fetch(`/api/tasks/${taskId}/execute`, { method: 'POST' });
+      const res = await fetch(apiUrl(`/tasks/${taskId}/execute`), { method: 'POST' });
       const data = await res.json();
       if (!res.ok) alert(`❌ Execution Failed: ${data.error}`);
     } catch (err: any) {
@@ -108,7 +109,7 @@ export default function CompanyOperatingSystem() {
           <div className="flex items-center gap-6">
             <button 
               onClick={async () => {
-                const res = await fetch('/api/system/seed', { method: 'POST' });
+                const res = await fetch(apiUrl('/system/seed'), { method: 'POST' });
                 if (res.ok) alert('✅ Database seeded.');
               }}
               className="px-4 py-2 bg-slate-900 border border-slate-800 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:text-white transition-all"

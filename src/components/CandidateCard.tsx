@@ -1,9 +1,14 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import { apiUrl } from '@/src/lib/api';
+
+const analyzedCandidates = new Set<string>();
+const inFlightCandidates = new Set<string>();
 
 interface Candidate {
   id: string;
+  display_name?: string;
   name?: string;
   email?: string;
   role?: string;
@@ -22,6 +27,13 @@ interface Candidate {
   parsed_companies?: string[];
   parsed_projects?: any[];
   parsed_certifications?: string[];
+  parsed_text?: string;
+  parser_status?: string;
+  parser_error?: string;
+  ai_summary?: string;
+  matched_skills?: string[];
+  missing_skills?: string[];
+  metadata?: any;
   candidate_analysis?: Analysis[];
 }
 
@@ -35,8 +47,12 @@ interface Analysis {
   missing_skills?: string[];
   details?: {
     summary?: string;
+    executive_briefing?: string;
     strengths?: string[];
     weaknesses?: string[];
+    strategic_recommendation?: string;
+    confidence?: string;
+    risk_level?: string;
     improvement_suggestions?: string[];
     interview_questions?: string[];
     recommended_department?: string;
@@ -46,6 +62,8 @@ interface Analysis {
     candidate_name?: string;
     email?: string;
     phone?: string;
+    parser_status?: string;
+    parser_error?: string;
   };
 }
 
@@ -55,6 +73,7 @@ interface CandidateCardProps {
 }
 
 export default function CandidateCard({ candidate, onRefresh }: CandidateCardProps) {
+  const candidateId = candidate?.id ? String(candidate.id) : '';
   const initialAnalysis = candidate.candidate_analysis && candidate.candidate_analysis.length > 0
     ? candidate.candidate_analysis[0]
     : null;
@@ -67,37 +86,49 @@ export default function CandidateCard({ candidate, onRefresh }: CandidateCardPro
 
   // Resolve display values — prefer parsed resume data over form data
   const d = analysis?.details || {};
-  const displayName = d.candidate_name || candidate.parsed_name || candidate.name || 'Unknown Candidate';
-  const displayEmail = d.email || candidate.parsed_email || candidate.email || null;
-  const displayPhone = d.phone || candidate.parsed_phone || null;
-  const displayRole = candidate.parsed_role || candidate.role || d.recommended_department || 'Unspecified Role';
-  const displayExp = candidate.parsed_experience || (candidate.experience ? `${candidate.experience}` : null);
-  const displaySkills = candidate.parsed_skills || analysis?.matched_skills || [];
-  const displayEducation = (() => {
-    const edu = d.education || candidate.parsed_education;
-    if (!edu) return null;
-    if (Array.isArray(edu)) {
-      return edu.map((e: any) => `${e.degree || ''} ${e.school ? 'at ' + e.school : ''}`).join(', ');
-    }
-    return typeof edu === 'string' ? edu : null;
-  })();
-  const displayCompanies = d.companies || candidate.parsed_companies || [];
-  const displayCertifications = d.certifications || candidate.parsed_certifications || [];
-  const displayResume = candidate.resume_url || candidate.resume_file || '#';
-  const hasResume = !!(candidate.resume_url || candidate.resume_file);
-
-  const score = analysis?.match_score ?? 0;
-  const isShortlisted = score >= 80;
+  const displayName =
+    candidate.display_name ||
+    d.candidate_name ||
+    candidate.parsed_name ||
+    candidate.name ||
+    candidate?.metadata?.candidate_name ||
+    candidate?.metadata?.parsed_resume?.name ||
+    'Resume Parsing Failed';
+  const displayEmail =
+    d.email ||
+    candidate.parsed_email ||
+    candidate.email ||
+    candidate?.metadata?.candidate_email ||
+    candidate?.metadata?.parsed_resume?.email ||
+    null;
+  const score = analysis?.match_score ?? (candidate as any)?.score ?? (candidate as any)?.metadata?.candidate_score ?? null;
+  const parserFailed = String(candidate.parser_status || analysis?.details?.parser_status || '').toLowerCase() === 'failed';
+  const isShortlisted = !parserFailed && typeof score === 'number' && score >= 80;
   const strokeColor = isShortlisted ? '#10b981' : '#ef4444';
   const glowColor = isShortlisted ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)';
+  const hasParsedText = Boolean(String(candidate.parsed_text || '').trim());
 
   // AUTO-RUN: trigger analysis on mount if none exists
   useEffect(() => {
-    if (initialAnalysis || hasFetched.current) return;
+    if (!candidateId) {
+      setError('Candidate ID missing');
+      return;
+    }
+    // If there is no resume/application context and no prior analysis, skip auto analyze.
+    // This prevents flooding /analysis/hr with non-candidate task records.
+    if (!initialAnalysis && !candidate.resume_url && !candidate.resume_file && !candidate.parsed_name && !candidate.parsed_email) {
+      setError('Awaiting candidate resume data');
+      return;
+    }
+    if (parserFailed || !hasParsedText) {
+      setError(candidate.parser_error || 'Resume text extraction failed');
+      return;
+    }
+    if (initialAnalysis || hasFetched.current || analyzedCandidates.has(candidateId) || inFlightCandidates.has(candidateId)) return;
     hasFetched.current = true;
     runFallbackAnalysis();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [candidateId, initialAnalysis, parserFailed, hasParsedText]);
 
   useEffect(() => {
     if (initialAnalysis && !analysis) setAnalysis(initialAnalysis);
@@ -105,19 +136,29 @@ export default function CandidateCard({ candidate, onRefresh }: CandidateCardPro
 
   // Fallback: runs generic analyze (for candidates uploaded before parse-resume was live)
   const runFallbackAnalysis = async () => {
+    if (!candidateId) {
+      setError('Candidate ID missing');
+      return;
+    }
+    if (inFlightCandidates.has(candidateId)) return;
+
+    inFlightCandidates.add(candidateId);
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/hr/analyze', {
+      const res = await fetch(apiUrl('/analysis/hr'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ candidateId: candidate.id })
+        body: JSON.stringify({ candidateId })
       });
       const data = await res.json();
       if (res.status === 429 || data?.error?.includes('429') || data?.error?.includes('quota')) {
         setError('rate_limit');
+      } else if (!res.ok && data?.code === 'RESUME_TEXT_MISSING') {
+        setError(data?.error || 'Resume text extraction failed');
       } else if (data.success && data.analysis) {
         setAnalysis(data.analysis);
+        analyzedCandidates.add(candidateId);
         if (onRefresh) onRefresh();
       } else {
         setError(data.error || 'Analysis failed');
@@ -125,6 +166,7 @@ export default function CandidateCard({ candidate, onRefresh }: CandidateCardPro
     } catch {
       setError('Network error');
     } finally {
+      inFlightCandidates.delete(candidateId);
       setLoading(false);
     }
   };
@@ -156,10 +198,6 @@ export default function CandidateCard({ candidate, onRefresh }: CandidateCardPro
         <div className="flex justify-between items-start">
           <div>
             <h3 className="text-2xl font-black text-white tracking-tight leading-none mb-2">{displayName}</h3>
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-              <p className="text-[#555] text-[10px] font-black uppercase tracking-widest">{displayRole}</p>
-            </div>
           </div>
           <span className="shrink-0 px-3 py-1.5 bg-[#111] border border-[#222] rounded-full text-[9px] font-black text-[#444] uppercase tracking-widest">
             HR Intel
@@ -177,81 +215,9 @@ export default function CandidateCard({ candidate, onRefresh }: CandidateCardPro
               </div>
             </div>
           )}
-          {displayPhone && (
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-[#111] rounded-xl flex items-center justify-center text-sm border border-[#1e1e1e]">📱</div>
-              <div>
-                <p className="text-[8px] font-black text-[#444] uppercase tracking-widest">Phone</p>
-                <p className="text-xs text-slate-300 font-bold">{displayPhone}</p>
-              </div>
-            </div>
-          )}
-          {displayExp && (
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-[#111] rounded-xl flex items-center justify-center text-sm border border-[#1e1e1e]">⏱️</div>
-              <div>
-                <p className="text-[8px] font-black text-[#444] uppercase tracking-widest">Experience</p>
-                <p className="text-xs text-slate-300 font-bold">{displayExp} Years</p>
-              </div>
-            </div>
-          )}
-          {displayEducation && (
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-[#111] rounded-xl flex items-center justify-center text-sm border border-[#1e1e1e]">🎓</div>
-              <div>
-                <p className="text-[8px] font-black text-[#444] uppercase tracking-widest">Education</p>
-                <p className="text-xs text-slate-300 font-bold">{displayEducation}</p>
-              </div>
-              {displayCertifications.length > 0 && (
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-[#111] rounded-xl flex items-center justify-center text-sm border border-[#1e1e1e]">📜</div>
-              <div>
-                <p className="text-[8px] font-black text-[#444] uppercase tracking-widest">Certifications</p>
-                <p className="text-xs text-slate-300 font-bold">{displayCertifications.slice(0, 3).join(', ')}</p>
-              </div>
-            </div>
-          )}
-        </div>
-          )}
-          {displayCompanies.length > 0 && (
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-[#111] rounded-xl flex items-center justify-center text-sm border border-[#1e1e1e]">🏢</div>
-              <div>
-                <p className="text-[8px] font-black text-[#444] uppercase tracking-widest">Past Companies</p>
-                <p className="text-xs text-slate-300 font-bold">{displayCompanies.slice(0, 3).join(', ')}</p>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Skills from resume */}
-        {displaySkills.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-[8px] font-black text-[#444] uppercase tracking-widest">Skills</p>
-            <div className="flex flex-wrap gap-1.5">
-              {displaySkills.slice(0, 10).map(skill => (
-                <span key={skill} className="px-2.5 py-1 bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[8px] font-black rounded-lg uppercase tracking-wider">
-                  {skill}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Resume link */}
         <div className="flex items-center gap-3 pt-2 border-t border-[#111]">
-          {hasResume ? (
-            <a
-              href={displayResume}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 text-white text-[9px] font-black uppercase tracking-[0.2em] rounded-xl border border-white/10 transition-all"
-            >
-              📄 View Resume →
-            </a>
-          ) : (
-            <span className="text-[9px] font-bold text-slate-700 uppercase tracking-widest">No Resume</span>
-          )}
           <span className="ml-auto flex items-center gap-1.5">
             <span className="w-1 h-1 rounded-full bg-purple-500 animate-pulse" />
             <p className="text-[8px] font-black text-[#333] uppercase tracking-widest">Autonomous HR Agent</p>
@@ -290,13 +256,13 @@ export default function CandidateCard({ candidate, onRefresh }: CandidateCardPro
             <div className="w-14 h-14 bg-amber-500/10 rounded-2xl flex items-center justify-center text-2xl border border-amber-500/20">⚡</div>
             <div>
               <p className="text-xs font-black text-amber-400 uppercase tracking-widest mb-1">
-                {error === 'rate_limit' ? 'Rate Limit — Auto Retrying' : 'Analysis Error'}
+                {error === 'rate_limit' ? 'Rate Limit — Auto Retrying' : 'Parsing / Analysis Error'}
               </p>
               <p className="text-[10px] text-[#444] font-medium max-w-[260px]">
                 {error === 'rate_limit' ? `Auto-retrying in ~1 min (${retryCount + 1}/3)...` : error}
               </p>
             </div>
-            {error !== 'rate_limit' && (
+            {error !== 'rate_limit' && !parserFailed && hasParsedText && (
               <button onClick={runFallbackAnalysis} className="px-6 py-2.5 bg-white/5 hover:bg-white/10 text-white text-[9px] font-black uppercase tracking-widest rounded-xl border border-white/10 transition-all">
                 Retry
               </button>
@@ -319,11 +285,13 @@ export default function CandidateCard({ candidate, onRefresh }: CandidateCardPro
             <div className="flex items-center justify-between">
               <p className="text-[10px] font-black text-[#444] uppercase tracking-[0.3em]">AI Match Score</p>
               <div className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] border flex items-center gap-1.5 ${
-                isShortlisted
+                parserFailed
+                  ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                  : isShortlisted
                   ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.1)]'
                   : 'bg-red-500/10 border-red-500/20 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.1)]'
               }`}>
-                {isShortlisted ? '✅ SHORTLISTED' : '❌ REJECTED'}
+                {parserFailed ? '⚠️ PARSING FAILED' : isShortlisted ? '✅ SHORTLISTED' : '❌ REJECTED'}
               </div>
             </div>
 
@@ -338,25 +306,33 @@ export default function CandidateCard({ candidate, onRefresh }: CandidateCardPro
                     strokeWidth="10"
                     fill="transparent"
                     strokeDasharray={352}
-                    strokeDashoffset={352 - (352 * score) / 100}
+                    strokeDashoffset={352 - (352 * (typeof score === 'number' ? score : 0)) / 100}
                     strokeLinecap="round"
                     className="transition-all duration-1000 ease-out"
                     style={{ filter: `drop-shadow(0 0 8px ${strokeColor}60)` }}
                   />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-3xl font-black text-white leading-none">{score}%</span>
+                  <span className="text-3xl font-black text-white leading-none">{typeof score === 'number' ? `${score}%` : 'N/A'}</span>
                   <span className="text-[8px] font-black text-[#444] uppercase tracking-widest mt-1">Match</span>
                 </div>
               </div>
 
               <div className="flex-1 space-y-3">
-                {d.summary && (
+                {(d.executive_briefing || d.summary || candidate.ai_summary) && (
                   <div>
-                    <p className="text-[9px] font-black text-[#444] uppercase tracking-widest mb-1">AI Summary</p>
-                    <p className="text-xs text-slate-300 leading-relaxed italic">"{d.summary}"</p>
+                    <p className="text-[9px] font-black text-[#444] uppercase tracking-widest mb-1">AI Executive Briefing</p>
+                    <p className="text-xs text-slate-300 leading-relaxed italic">"{d.executive_briefing || d.summary || candidate.ai_summary}"</p>
                   </div>
                 )}
+                <div className="flex gap-2 flex-wrap">
+                  <span className="px-2.5 py-1 bg-white/5 border border-white/10 text-[8px] font-black uppercase tracking-wider rounded-lg text-slate-300">
+                    Confidence: {String(d.confidence || 'medium').toUpperCase()}
+                  </span>
+                  <span className="px-2.5 py-1 bg-white/5 border border-white/10 text-[8px] font-black uppercase tracking-wider rounded-lg text-slate-300">
+                    Risk: {String(d.risk_level || 'medium').toUpperCase()}
+                  </span>
+                </div>
                 {d.recommended_department && (
                   <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-xl">
                     <span className="text-[8px] font-black text-purple-400 uppercase tracking-widest">Best Fit: {d.recommended_department}</span>
@@ -395,13 +371,20 @@ export default function CandidateCard({ candidate, onRefresh }: CandidateCardPro
               </div>
             )}
 
+            {d.strategic_recommendation && (
+              <div className="p-4 bg-indigo-500/5 border border-indigo-500/20 rounded-2xl space-y-2">
+                <p className="text-[9px] font-black text-indigo-400/70 uppercase tracking-widest">Strategic Recommendation</p>
+                <p className="text-[10px] text-indigo-100/80 leading-relaxed">{d.strategic_recommendation}</p>
+              </div>
+            )}
+
             {/* Matched / Missing skills */}
             <div className="grid grid-cols-2 gap-4 pt-3 border-t border-[#1a1a1a]">
               <div className="space-y-2">
                 <p className="text-[9px] font-black text-emerald-500/50 uppercase tracking-widest">Matched Skills</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {analysis.matched_skills && analysis.matched_skills.length > 0
-                    ? analysis.matched_skills.map(s => (
+                  {(analysis.matched_skills || candidate.matched_skills) && (analysis.matched_skills || candidate.matched_skills || []).length > 0
+                    ? (analysis.matched_skills || candidate.matched_skills || []).map(s => (
                         <span key={s} className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black rounded-lg uppercase tracking-wider">{s}</span>
                       ))
                     : <span className="text-[9px] text-[#333] font-bold">None detected</span>}
@@ -410,8 +393,8 @@ export default function CandidateCard({ candidate, onRefresh }: CandidateCardPro
               <div className="space-y-2">
                 <p className="text-[9px] font-black text-red-500/50 uppercase tracking-widest">Missing Skills</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {analysis.missing_skills && analysis.missing_skills.length > 0
-                    ? analysis.missing_skills.map(s => (
+                  {(analysis.missing_skills || candidate.missing_skills) && (analysis.missing_skills || candidate.missing_skills || []).length > 0
+                    ? (analysis.missing_skills || candidate.missing_skills || []).map(s => (
                         <span key={s} className="px-2.5 py-1 bg-red-500/10 border border-red-500/20 text-red-400 text-[8px] font-black rounded-lg uppercase tracking-wider">{s}</span>
                       ))
                     : <span className="text-[9px] text-[#333] font-bold">None detected</span>}

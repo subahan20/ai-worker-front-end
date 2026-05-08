@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ToastContainer, useToast } from './Toast';
 import { supabase } from '@/src/lib/supabase';
+import { apiUrl } from '@/src/lib/api';
 
 // --- Types ---
 export type Department = 'HR' | 'Sales' | 'Marketing' | 'Finance' | 'Operations';
@@ -79,7 +80,7 @@ export default function CEODashboard() {
 
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch('/api/tasks');
+      const res = await fetch(apiUrl('/tasks'));
       if (res.ok) {
         const data = await res.json();
         setTasks(data);
@@ -115,7 +116,7 @@ export default function CEODashboard() {
 
     const loadingId = addToast(`🚀 Approving ${pendingCount} tasks...`, 'loading');
     try {
-      const res = await fetch('/api/tasks/approve', { method: 'POST' });
+      const res = await fetch(apiUrl('/tasks/approve'), { method: 'POST' });
       if (!res.ok) throw new Error('Approval failed');
       
       removeToast(loadingId);
@@ -133,7 +134,7 @@ export default function CEODashboard() {
     const loadingId = addToast('🤖 Analyzing task...', 'loading');
 
     try {
-      const aiRes = await fetch('/api/tasks/assign', {
+      const aiRes = await fetch(apiUrl('/tasks/assign'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description }),
@@ -148,7 +149,7 @@ export default function CEODashboard() {
       if (mappedDept === 'Engineering') mappedDept = 'Developer';
       if (!DEPARTMENTS.includes(mappedDept)) mappedDept = 'Operations';
 
-      const saveRes = await fetch('/api/tasks', {
+      const saveRes = await fetch(apiUrl('/tasks'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

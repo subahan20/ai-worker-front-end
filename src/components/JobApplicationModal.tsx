@@ -3,6 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '@/src/lib/supabase';
 import Modal from './Modal';
+import { apiUrl } from '@/src/lib/api';
 
 interface JobApplicationModalProps {
   isOpen: boolean;
@@ -120,10 +121,37 @@ export default function JobApplicationModal({ isOpen, onClose }: JobApplicationM
       if (insertError) throw insertError;
 
       if (insertedApp?.id) {
-        fetch('/api/apply/process', {
+        const parseRes = await fetch(apiUrl('/parse-resume'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ applicationId: insertedApp.id })
+          body: JSON.stringify({
+            resumeUrl: publicUrl,
+            applicationId: insertedApp.id
+          })
+        });
+
+        if (parseRes.ok) {
+          const parsePayload = await parseRes.json().catch(() => null);
+          if (parsePayload?.success && parsePayload?.data) {
+            await fetch(apiUrl('/tasks/from-resume'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                applicationId: insertedApp.id,
+                resumeUrl: publicUrl,
+                parsedData: parsePayload.data,
+                department: 'HR',
+                title: `Resume Review: ${parsePayload.data?.name || insertedApp.name || 'Candidate'}`,
+                description: 'Parsed resume details synced into tasks.',
+              }),
+            }).catch(console.error);
+          }
+        }
+
+        fetch(apiUrl('/analysis/hr'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ candidateId: insertedApp.id })
         }).catch(console.error);
       }
 

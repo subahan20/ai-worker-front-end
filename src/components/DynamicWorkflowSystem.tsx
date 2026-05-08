@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/src/lib/supabase';
+import { apiUrl } from '@/src/lib/api';
 import Modal from './Modal';
 import { ToastContainer, useToast } from './Toast';
 import TaskQueue from './TaskQueue';
@@ -13,6 +14,17 @@ import AIAnalysisModal from './AIAnalysisModal';
 import CandidatesTab from './CandidatesTab';
 import MarketingTab from './MarketingTab';
 import SalesTab from './SalesTab';
+import { TaskAssignmentModal } from './CEOAgentTaskAssignment';
+import { useGetTasksQuery, useApproveTasksMutation } from '../redux/api/tasksApi';
+import { useAppSelector, useAppDispatch } from '../redux/hooks';
+import { RootState } from '../redux/store';
+import { 
+  selectHRData, 
+  selectMarketingData, 
+  selectSalesData, 
+  selectOpsData, 
+  selectFinanceData 
+} from '../redux/slices/tasksSlice';
 export type Department = 'HR' | 'Sales' | 'Finance' | 'Marketing' | 'Operations';
 export type Status = 'Pending' | 'In Progress' | 'Completed';
 
@@ -123,34 +135,25 @@ export default function NeuralWorkflowSystem() {
   const [activeTab, setActiveTab] = useState<'Overview' | 'Data' | 'Ideas'>('Overview');
   const [runningDepts, setRunningDepts] = useState<Set<string>>(new Set());
   const [showPlanModal, setShowPlanModal] = useState(false);
-  const [candidates, setCandidates] = useState<any[]>([]);
-  const [marketingProfiles, setMarketingProfiles] = useState<any[]>([
-    {
-      id: 'mock-1',
-      handle_name: 'AI Automation saves 100 hours',
-      platform: 'Instagram Reels',
-      followers: '1.2M',
-      likes: '145K',
-      bio: 'Hook: "Stop doing this manually." Visuals: Quick screen recording of Zapier. High engagement due to actionable tip.',
-      marketing_analysis: []
-    }
-  ]);
-  const [isSendingEmail, setIsSendingEmail] = useState<string | null>(null);
-  const [selectedTaskForAnalysis, setSelectedTaskForAnalysis] = useState<{id: string, title: string, dept: string} | null>(null);
-  const [showAnalysisModal, setShowAnalysisModal] = useState(false);
-  const [selectedCandidate, setSelectedCandidate] = useState<{ id: string, name: string } | null>(null);
-  const [salesInsights, setSalesInsights] = useState<any[]>([]);
-  const [opsInsights, setOpsInsights] = useState<any[]>([]);
-  const [financeInsights, setFinanceInsights] = useState<any[]>([]);
+  const allMarketingData = useAppSelector((state: RootState) => selectMarketingData(state));
+  const allHRData = useAppSelector((state: RootState) => selectHRData(state));
+  const allSalesData = useAppSelector((state: RootState) => selectSalesData(state));
+  const allOpsData = useAppSelector((state: RootState) => selectOpsData(state));
+  const allFinanceData = useAppSelector((state: RootState) => selectFinanceData(state));
 
   const [hrReport, setHrReport] = useState<any>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [selectedRoadmap, setSelectedRoadmap] = useState<{title: string, dept: string, content: any} | null>(null);
   const [showRoadmapModal, setShowRoadmapModal] = useState(false);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [candidates, setCandidates] = useState<any[]>([]);
+  const [isSendingEmail, setIsSendingEmail] = useState<string | null>(null);
+  const [showAnalysisModal, setShowAnalysisModal] = useState(false);
+  const [selectedTaskForAnalysis, setSelectedTaskForAnalysis] = useState<{id: string, dept: string, title: string} | null>(null);
 
   const fetchHRReport = async () => {
     try {
-      const res = await fetch('/api/hr/report/generate');
+      const res = await fetch(apiUrl('/hr/report/generate'));
       const data = await res.json();
       if (data.success) setHrReport(data.report);
     } catch (err) {
@@ -162,7 +165,7 @@ export default function NeuralWorkflowSystem() {
     setIsGeneratingReport(true);
     const loadingId = addToast(force ? '🤖 Synthesizing report from all analyzed talent...' : '🤖 Analyzing candidates and drafting CEO report...', 'loading');
     try {
-      const res = await fetch('/api/hr/report/generate', { 
+      const res = await fetch(apiUrl('/hr/report/generate'), { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ force }) 
@@ -188,15 +191,17 @@ export default function NeuralWorkflowSystem() {
     }
   };
 
+  const { data: allTasks = [], isLoading: isLoadingTasks, refetch: refetchTasks } = useGetTasksQuery(undefined, {
+    pollingInterval: 5000,
+  });
+  const [approveTasks] = useApproveTasksMutation();
+
   const handleApproveAll = async () => {
     const loadingId = addToast('🚀 Initializing all department workers...', 'loading');
     try {
-      const res = await fetch('/api/tasks/approve', { method: 'POST' });
-      if (!res.ok) throw new Error('Approval failed');
-      const data = await res.json();
+      await approveTasks().unwrap();
       removeToast(loadingId);
-      addToast(`✅ ${data.message}`, 'success');
-      fetchTasks(); // Refresh local list
+      addToast('✅ All tasks approved and simulation started!', 'success');
     } catch (err) {
       removeToast(loadingId);
       console.error('Approve all error:', err);
@@ -204,99 +209,26 @@ export default function NeuralWorkflowSystem() {
     }
   };
   
-  // Tasks Queue State
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [connectedTasks, setConnectedTasks] = useState<any[]>([]);
+  // Local state for UI only
   const [description, setDescription] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const { toasts, addToast, removeToast } = useToast();
 
   const completedDepts = React.useMemo(() => {
     const depts = new Set<string>();
-    [...tasks, ...connectedTasks].forEach(t => {
+    allTasks.forEach(t => {
       if (t.status?.toUpperCase() === 'COMPLETED' || t.status?.toUpperCase() === 'SUCCESS') {
         depts.add(t.department);
       }
     });
-    if (candidates.some(c => c.candidate_analysis?.length > 0)) depts.add('HR');
-    if (marketingProfiles.some(p => p.marketing_analysis?.length > 0)) depts.add('Marketing');
-    if (salesInsights.length > 0) depts.add('Sales');
-    if (opsInsights.length > 0) depts.add('Operations');
-    if (financeInsights.length > 0) depts.add('Finance');
     return depts;
-  }, [tasks, connectedTasks, candidates, marketingProfiles, salesInsights, opsInsights]);
+  }, [allTasks]);
 
-  const fetchTasks = useCallback(async () => {
-    try {
-      // Fetch manual tasks
-      const res = await fetch('/api/tasks');
-      if (res.ok) {
-        const data = await res.json();
-        setTasks(data);
-      }
+  const fetchTasks = () => refetchTasks();
 
-      // Fetch automated connected tasks
-      const { data: cData, error } = await supabase
-        .from('connected_tasks')
-        .select('*');
-      if (!error && cData) {
-        setConnectedTasks(cData);
-      }
-    } catch (err) {
-      console.error('Failed to fetch tasks:', err);
-    }
-  }, []);
-
-  useEffect(() => { 
-    fetchTasks();
-
-    // 1. Listen for manual tasks
-    const taskChannel = supabase.channel('dashboard_tasks')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, fetchTasks)
-      .subscribe();
-
-    // 2. Listen for automated connected tasks
-    const connectedChannel = supabase.channel('dashboard_connected')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'connected_tasks' }, fetchTasks)
-      .subscribe();
-
-    // 3. Listen for HR Applications & Analysis (Autonomous UI Refreshes)
-    const hrChannel = supabase.channel('dashboard_hr')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'applications' }, () => {
-        console.log('🔄 Application updated, refreshing radar...');
-        fetchCandidates();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'candidate_analysis' }, () => {
-        console.log('🔬 Analysis complete, updating candidate cards...');
-        fetchCandidates();
-        fetchHRReport(); // Auto-refresh report if something was analyzed
-      })
-      .subscribe();
-
-    if (selectedDept === 'HR') {
-      fetchCandidates();
-      fetchHRReport();
-    }
-    if (selectedDept === 'Marketing') {
-      fetchMarketingProfiles();
-    }
-    if (selectedDept === 'Sales') {
-      fetchSalesInsights();
-    }
-    if (selectedDept === 'Operations') {
-      fetchOpsInsights();
-    }
-    if (selectedDept === 'Finance') {
-      fetchFinanceInsights();
-    }
-
-    return () => {
-      supabase.removeChannel(taskChannel);
-      supabase.removeChannel(connectedChannel);
-      supabase.removeChannel(hrChannel);
-    };
-  // Remove activeTab from deps — tab switching should NOT re-fetch candidates
-  }, [fetchTasks, selectedDept]);
+  useEffect(() => {
+    refetchTasks();
+  }, [refetchTasks, selectedDept]);
 
   // AUTO-GENERATE CEO REPORT: fires when HR Ideas tab is open and analyzed candidates exist
   useEffect(() => {
@@ -362,61 +294,6 @@ export default function NeuralWorkflowSystem() {
     }
   };
 
-  const fetchMarketingProfiles = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('marketing_posts')
-        .select('*, marketing_insights(*)')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      setMarketingProfiles(data || []);
-    } catch (err) {
-      console.error('Failed to fetch marketing profiles:', err);
-    }
-  };
-
-  const fetchSalesInsights = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('sales_insights')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setSalesInsights(data || []);
-    } catch (err: any) {
-      console.error('Failed to fetch sales insights:', err.message || err);
-    }
-  };
-
-  const fetchOpsInsights = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('ops_insights')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      console.log('Fetched Ops Insights:', data);
-      setOpsInsights(data || []);
-    } catch (err: any) {
-      console.error('Failed to fetch ops insights:', err.message || err);
-    }
-  };
-
-  const fetchFinanceInsights = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('finance_insights')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setFinanceInsights(data || []);
-    } catch (err: any) {
-      console.error('Failed to fetch finance insights:', err.message || err);
-    }
-  };
-
-
   const handleSendToCEO = async (candidate: any) => {
     if (!candidate.evaluation) {
       addToast('❌ No evaluation data to send', 'error');
@@ -427,7 +304,7 @@ export default function NeuralWorkflowSystem() {
     const loadingId = addToast('📧 Sending report to CEO...', 'loading');
 
     try {
-      const res = await fetch('/api/tasks/execute', { // Reusing execute or creating new?
+      const res = await fetch(apiUrl('/tasks/execute'), { // Reusing execute or creating new?
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -455,7 +332,7 @@ export default function NeuralWorkflowSystem() {
     const loadingId = addToast('🤖 Analyzing task...', 'loading');
 
     try {
-      const aiRes = await fetch('/api/tasks/assign', {
+      const aiRes = await fetch(apiUrl('/tasks/assign'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description }),
@@ -467,7 +344,7 @@ export default function NeuralWorkflowSystem() {
       let mappedDept = aiData.department as Department;
       if (!DEPARTMENTS.includes(mappedDept)) mappedDept = 'Operations';
 
-      const saveRes = await fetch('/api/tasks', {
+      const saveRes = await fetch(apiUrl('/tasks'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -481,7 +358,7 @@ export default function NeuralWorkflowSystem() {
       if (!saveRes.ok) throw new Error('Failed to save task');
       const newTask: Task = await saveRes.json();
 
-      setTasks(prev => [newTask, ...prev]);
+      await refetchTasks();
       setDescription('');
       removeToast(loadingId);
       addToast(`✅ Task assigned to ${mappedDept}`, 'success');
@@ -497,7 +374,7 @@ export default function NeuralWorkflowSystem() {
   const startWorkflow = async (dept: Department) => {
     setRunningDepts(prev => new Set([...prev, dept]));
     try {
-      const response = await fetch(`/api/workflow/${dept.toLowerCase()}/run`, { method: 'POST' });
+      const response = await fetch(apiUrl(`/workflow/${dept.toLowerCase()}/run`), { method: 'POST' });
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         console.warn(`[Workflow] ${dept} responded with ${response.status}:`, err?.message);
@@ -511,10 +388,10 @@ export default function NeuralWorkflowSystem() {
 
   // Get the most recent task for each department to determine current status
   const getActiveTaskForDept = (dept: Department) => {
-    const allTasks = [...tasks, ...connectedTasks].filter(t => t.department === dept);
-    if (allTasks.length === 0) return null;
+    const tasksForDept = allTasks.filter(t => t.department === dept);
+    if (tasksForDept.length === 0) return null;
     // Sort by created_at descending and pick the first
-    return allTasks.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+    return [...tasksForDept].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
   };
 
   return (
@@ -552,6 +429,12 @@ export default function NeuralWorkflowSystem() {
             <h2 className="text-3xl font-bold text-white tracking-tight italic uppercase">CEO Control Agent</h2>
             <p className="text-sm text-[#888] font-medium uppercase tracking-widest">Autonomous Orchestration · Global Scaling</p>
             <div className="flex flex-wrap gap-3 mt-4">
+              <button 
+                onClick={() => setIsAssignModalOpen(true)}
+                className="px-8 py-3 bg-indigo-600 text-white text-[10px] font-black rounded-lg uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-indigo-600/20"
+              >
+                Assign Task
+              </button>
               <button 
                 onClick={handleApproveAll}
                 className="px-8 py-3 bg-white text-black text-[10px] font-black rounded-lg uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/5"
@@ -662,6 +545,15 @@ export default function NeuralWorkflowSystem() {
           </div>
         </div>
       </main>
+      
+      <TaskAssignmentModal 
+        isOpen={isAssignModalOpen} 
+        onClose={() => setIsAssignModalOpen(false)} 
+        onTaskAssigned={() => {
+          fetchTasks();
+          setIsAssignModalOpen(false);
+        }}
+      />
 
       {/* Legacy Details Modal View */}
       {showWorkflowModal && selectedDept && (
@@ -704,65 +596,78 @@ export default function NeuralWorkflowSystem() {
 
                       if (selectedDept === 'HR') {
                         // For HR, override the generic task overview with the latest Shortlisted candidate's deep AI insights
-                        const latestShortlisted = candidates.filter(c => {
-                          const dec = c.candidate_analysis?.[0]?.decision?.toUpperCase();
+                        const latestShortlisted = allHRData.filter(c => {
+                          const dec = c.analysis && Array.isArray(c.analysis) && c.analysis[0]?.decision?.toUpperCase();
                           return dec === 'SHORTLISTED' || dec === 'SELECTED' || dec === 'HIRE';
                         })[0];
                         if (latestShortlisted) {
-                          const details = latestShortlisted.candidate_analysis[0].details || {};
+                          const latestCandidateAnalysis = Array.isArray(latestShortlisted.candidate_analysis)
+                            ? latestShortlisted.candidate_analysis[0]
+                            : null;
+                          const details = latestCandidateAnalysis?.details || {};
                           analysis = {
-                            summary: `Candidate: ${latestShortlisted.name} - ${details.summary || latestShortlisted.candidate_analysis[0].reason}`,
+                            summary: `Candidate: ${latestShortlisted.name} - ${details.summary || latestCandidateAnalysis?.reason || 'Candidate analyzed and shortlisted by AI.'}`,
                             strengths: details.pros || ['Strong technical background', 'Good communication skills'],
                             weaknesses: details.cons || ['Requires ramp-up time on specific internal tools'],
                             recommendations: [details.interview_plan || 'Proceed with technical interview immediately.']
                           };
                         } else {
                           // Fallback to generic task if no candidates are shortlisted yet
-                          const latestTask = [...tasks, ...connectedTasks]
+                          const latestTask = [...allTasks]
                             .filter(t => t.department === selectedDept)
                             .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
                           analysis = latestTask?.analysis;
                         }
                       } else if (selectedDept === 'Marketing') {
                         // For Marketing, override the generic task overview with the latest Analyzed profile
-                        const latestAnalyzed = marketingProfiles.filter(p => p.marketing_analysis?.length > 0)[0];
+                        const latestAnalyzed = allMarketingData.filter(p => p.analysis)[0];
                         if (latestAnalyzed) {
-                          const analysisObj = latestAnalyzed.marketing_analysis[0];
-                          analysis = {
-                            summary: `Marketing Profile: ${latestAnalyzed.handle_name} (${latestAnalyzed.platform}) - ${analysisObj.summary || analysisObj.reason}`,
-                            strengths: analysisObj.pros || ['Good engagement rate', 'Consistent posting'],
-                            weaknesses: analysisObj.cons || ['Low follower growth', 'Needs more video content'],
-                            recommendations: [analysisObj.content_ideas || 'Focus on viral short-form video.']
-                          };
+                          const analysisObj = Array.isArray(latestAnalyzed.marketing_analysis)
+                            ? latestAnalyzed.marketing_analysis[0]
+                            : null;
+                          if (analysisObj) {
+                            analysis = {
+                              summary: `Marketing Profile: ${latestAnalyzed.handle_name} (${latestAnalyzed.platform}) - ${analysisObj.summary || analysisObj.reason}`,
+                              strengths: analysisObj.pros || ['Good engagement rate', 'Consistent posting'],
+                              weaknesses: analysisObj.cons || ['Low follower growth', 'Needs more video content'],
+                              recommendations: [analysisObj.content_ideas || 'Focus on viral short-form video.']
+                            };
+                          }
                         } else {
                           // Fallback to generic task
-                          const latestTask = [...tasks, ...connectedTasks]
+                          const latestTask = [...allTasks]
+                            .filter(t => t.department === selectedDept)
+                            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+                          analysis = latestTask?.analysis;
+                        }
+                        if (!analysis) {
+                          const latestTask = [...allTasks]
                             .filter(t => t.department === selectedDept)
                             .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
                           analysis = latestTask?.analysis;
                         }
                       } else if (selectedDept === 'Sales') {
-                        const latestSales = salesInsights[0];
+                        const latestSales = allSalesData[0] as any;
                         if (latestSales) {
                           analysis = {
-                            summary: latestSales.overview,
-                            strengths: [latestSales.target_customers],
+                            summary: latestSales.analysis?.overview || latestSales.overview || "Generating sales strategy...",
+                            strengths: [latestSales.analysis?.target_customers || latestSales.target_customers || "High-value lead identification"],
                             weaknesses: ['Competitor saturation', 'Cold reach limits'],
-                            recommendations: [latestSales.strategy]
+                            recommendations: [latestSales.analysis?.strategy || latestSales.strategy || "Optimize outreach funnel"]
                           };
                         }
                       } else if (selectedDept === 'Operations') {
-                        const latestOps = opsInsights[0];
+                        const latestOps = allOpsData[0] as any;
                         if (latestOps) {
                           analysis = {
-                            summary: latestOps.summary,
-                            strengths: latestOps.improvements || [],
-                            weaknesses: latestOps.inefficiencies || [],
-                            recommendations: latestOps.execution_steps || []
+                            summary: latestOps.analysis?.summary || latestOps.summary || "Optimizing infrastructure...",
+                            strengths: latestOps.analysis?.improvements || latestOps.improvements || [],
+                            weaknesses: latestOps.analysis?.inefficiencies || latestOps.inefficiencies || [],
+                            recommendations: latestOps.analysis?.execution_steps || latestOps.execution_steps || []
                           };
                         }
                       } else if (selectedDept === 'Finance') {
-                        const latestFinance = financeInsights[0];
+                        const latestFinance = allFinanceData[0] as any;
                         if (latestFinance) {
                           analysis = {
                             summary: latestFinance.summary,
@@ -773,7 +678,7 @@ export default function NeuralWorkflowSystem() {
                         }
                       } else {
                         // Generic department task overview
-                        const latestTask = [...tasks, ...connectedTasks]
+                        const latestTask = [...allTasks]
                           .filter(t => t.department === selectedDept)
                           .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
                         analysis = latestTask?.analysis;
@@ -856,11 +761,11 @@ export default function NeuralWorkflowSystem() {
                 )}
 
                 {activeTab === 'Data' && selectedDept === 'HR' && (
-                  <CandidatesTab candidates={candidates} onRefresh={fetchCandidates} />
+                  <CandidatesTab candidates={allHRData} onRefresh={refetchTasks} />
                 )}
 
                 {activeTab === 'Data' && selectedDept === 'Marketing' && (
-                  <MarketingTab profiles={marketingProfiles} setProfiles={setMarketingProfiles} />
+                  <MarketingTab profiles={allMarketingData} />
                 )}
 
                 {activeTab === 'Data' && selectedDept === 'Sales' && (
@@ -874,15 +779,12 @@ export default function NeuralWorkflowSystem() {
                     {/* Header */}
                     <div className="flex justify-between items-center px-4">
                        <h3 className="text-xs font-black uppercase tracking-widest text-[#444]">
-                        {selectedDept === 'Operations' ? opsInsights.length : 
-                         selectedDept === 'Finance' ? financeInsights.length : 
+                        {selectedDept === 'Operations' ? allOpsData.length : 
+                         selectedDept === 'Finance' ? allFinanceData.length : 
                          (AGENT_SPECIFICS[selectedDept as Department] as typeof AGENT_SPECIFICS['HR']).items.length} {(AGENT_SPECIFICS[selectedDept as Department] as typeof AGENT_SPECIFICS['HR']).tabName.toUpperCase()} · STORED IN DB
                        </h3>
                        <button 
-                        onClick={() => {
-                          if (selectedDept === 'Operations') fetchOpsInsights();
-                          if (selectedDept === 'Finance') fetchFinanceInsights();
-                        }}
+                        onClick={() => refetchTasks()}
                         className="text-[10px] font-black text-[#555] uppercase tracking-widest hover:text-white transition-all underline underline-offset-4"
                        >
                          Refresh Feed
@@ -892,7 +794,7 @@ export default function NeuralWorkflowSystem() {
                     {/* Content List */}
                     <div className="space-y-4">
                       {/* 1. Show database insights if they exist */}
-                      {selectedDept === 'Operations' && opsInsights.map((item: any) => (
+                      {selectedDept === 'Operations' && allOpsData.map((item: any) => (
                         <div key={item.id} className="bg-[#0a0a0a] border border-[#1a1a1a] p-8 rounded-[2rem] hover:border-blue-500/50 transition-all group">
                           <div className="flex items-center gap-8">
                             <div className="w-20 h-20 bg-[#151515] border border-white/5 rounded-2xl flex items-center justify-center text-3xl">⚙️</div>
@@ -908,7 +810,7 @@ export default function NeuralWorkflowSystem() {
                         </div>
                       ))}
 
-                      {selectedDept === 'Finance' && financeInsights.map((item: any) => (
+                      {selectedDept === 'Finance' && allFinanceData.map((item: any) => (
                         <div key={item.id} className="bg-[#0a0a0a] border border-[#1a1a1a] p-8 rounded-[2rem] hover:border-amber-500/50 transition-all group">
                           <div className="flex items-center gap-8">
                             <div className="w-20 h-20 bg-[#151515] border border-white/5 rounded-2xl flex items-center justify-center text-3xl">💰</div>
@@ -950,8 +852,8 @@ export default function NeuralWorkflowSystem() {
                       ))}
 
                       {/* 3. Empty State */}
-                      {((selectedDept === 'Operations' && opsInsights.length === 0) ||
-                        (selectedDept === 'Finance' && financeInsights.length === 0)) &&
+                      {((selectedDept === 'Operations' && allOpsData.length === 0) ||
+                        (selectedDept === 'Finance' && allFinanceData.length === 0)) &&
                         AGENT_SPECIFICS[selectedDept].items.length === 0 && (
                         <div className="p-20 text-center space-y-4">
                           <div className="text-4xl">📭</div>
@@ -1164,7 +1066,7 @@ export default function NeuralWorkflowSystem() {
                             </div>
                           );
                         } else if (selectedDept === 'Marketing') {
-                          const viralReady = marketingProfiles.filter(p => p.marketing_analysis?.length > 0);
+                          const viralReady = allMarketingData.filter(p => p.marketing_analysis?.length > 0);
                           return (
                             <div className="space-y-8">
                                {/* General Marketing Strategy (Always Visible) */}
@@ -1223,7 +1125,10 @@ export default function NeuralWorkflowSystem() {
                                </div>
                                {/* Viral Ready Profile Ideas */}
                                {viralReady.map(profile => {
-                                 const analysis = profile.marketing_analysis[0];
+                                 const analysis = Array.isArray(profile.marketing_analysis)
+                                   ? profile.marketing_analysis[0]
+                                   : null;
+                                 if (!analysis) return null;
                                  const mailtoLink = `mailto:ceo@company.com?subject=Marketing Opportunity: ${encodeURIComponent(profile.handle_name)}&body=${encodeURIComponent(`Hi CEO,\n\nI ran a viral audit on ${profile.handle_name} (${profile.platform}) and the AI flagged it as VIRAL READY.\n\nSummary:\n${analysis.summary || analysis.reason}\n\nStrengths:\n${(analysis.pros || []).map((p:string) => '- ' + p).join('\n')}\n\nContent Strategy / Pitch:\n${analysis.content_ideas || 'No specific ideas generated.'}\n\nLet me know if we should allocate budget to test this strategy.\n\nBest,\nMarketing Team`)}`;
 
                                  return (
@@ -1253,8 +1158,8 @@ export default function NeuralWorkflowSystem() {
                                })}
                             </div>
                           );
-                         } else if (selectedDept === 'Sales') {
-                          const latestSales = salesInsights[0];
+                        } else if (selectedDept === 'Sales') {
+                          const latestSales = allSalesData[0];
                           
                           return (
                             <div className="space-y-8">
@@ -1324,7 +1229,7 @@ export default function NeuralWorkflowSystem() {
                             </div>
                           );
                         } else if (selectedDept === 'Operations') {
-                          const latestOps = opsInsights[0];
+                          const latestOps = allOpsData[0];
                           
                           return (
                             <div className="space-y-8">
@@ -1500,12 +1405,7 @@ export default function NeuralWorkflowSystem() {
         isOpen={showPlanModal} 
         onClose={() => setShowPlanModal(false)} 
         onPlanCreated={() => {
-          fetchTasks();
-          fetchCandidates();
-          fetchMarketingProfiles();
-          fetchSalesInsights();
-          fetchOpsInsights();
-          fetchFinanceInsights();
+          refetchTasks();
         }}
       />
 
