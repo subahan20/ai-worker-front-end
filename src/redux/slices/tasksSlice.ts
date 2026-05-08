@@ -157,7 +157,8 @@ export const selectOpsData = (state: RootState) => {
     efficiency: t.analysis?.efficiency || 0,
     summary: t.analysis?.summary || t.description,
     inefficiencies: t.analysis?.inefficiencies || [],
-    improvements: t.analysis?.improvements || []
+    improvements: t.analysis?.improvements || [],
+    execution_steps: t.analysis?.execution_steps || []
   }));
 };
 
