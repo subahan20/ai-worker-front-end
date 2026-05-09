@@ -4,12 +4,25 @@ import React, { useState } from 'react';
 import TaskCard from './TaskCard';
 import TaskDetailModal from './TaskDetailModal';
 import { useToast } from './Toast';
+import type { Task } from '../redux/api/tasksApi';
 import { useGetTasksQuery, useApproveTasksMutation } from '../redux/api/tasksApi';
+import { TASKS_QUERY_OPTIONS } from '../redux/api/tasksQueryDefaults';
 
-export default function TaskQueue() {
-  const { data: tasks = [], isLoading } = useGetTasksQuery(undefined, {
-    pollingInterval: 5000,
+export interface TaskQueueProps {
+  /** When supplied (including `[]`), this component skips its own `/tasks` subscription so only one caller fetches */
+  tasks?: Task[];
+  isLoading?: boolean;
+}
+
+export default function TaskQueue({ tasks: tasksProp, isLoading: isLoadingProp }: TaskQueueProps) {
+  const useInternal = tasksProp === undefined;
+  const { data = [], isLoading: qLoading } = useGetTasksQuery(undefined, {
+    ...TASKS_QUERY_OPTIONS,
+    skip: !useInternal,
   });
+  const tasks = useInternal ? data : tasksProp!;
+  const isLoading = useInternal ? qLoading : Boolean(isLoadingProp);
+
   const [approveTasks] = useApproveTasksMutation();
   const [isApproving, setIsApproving] = useState(false);
 
@@ -35,6 +48,13 @@ export default function TaskQueue() {
   };
 
   const pendingCount = tasks.filter(t => (t.status as string || '').toLowerCase() === 'waiting_for_ceo').length;
+  const hasRunningTask = tasks.some((t) => {
+    const s = String(t.status ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+    return s === 'running' || s === 'working' || s === 'in_progress';
+  });
 
   if (isLoading && tasks.length === 0) {
     return (
@@ -52,8 +72,13 @@ export default function TaskQueue() {
         <div className="flex flex-col gap-1">
           <h2 className="text-lg font-black text-white uppercase tracking-[0.3em]">Command Center</h2>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-            {tasks.length} active autonomous workloads ({pendingCount} pending)
+            {tasks.length} live workflows · {pendingCount} awaiting your go-ahead
           </p>
+          {hasRunningTask && (
+            <p className="text-[10px] font-medium text-slate-600 tracking-wide normal-case mt-1 max-w-xl">
+              Deeper audits can run for several minutes. Status syncs automatically every few seconds—no refresh needed.
+            </p>
+          )}
         </div>
         
         <div className="flex items-center gap-3">

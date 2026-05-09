@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/src/lib/supabase';
 import { apiUrl } from '@/src/lib/api';
+import { extractInstagramHandle, replaceInstagramUrlsInText } from '@/src/lib/instagram';
 import Modal from './Modal';
 import { ToastContainer, useToast } from './Toast';
 import TaskQueue from './TaskQueue';
@@ -11,11 +12,19 @@ import CandidateEvaluationModal from './CandidateEvaluationModal';
 import PlanModal from './PlanModal';
 import TaskCard from './TaskCard';
 import AIAnalysisModal from './AIAnalysisModal';
+import {
+  shouldBlockDeptInsights,
+  isDeptTaskSuccessfullyCompleted,
+  deptIdleProcessingLine,
+  deptProcessingHeadline,
+  deptProcessingSubcopy,
+  deptCompletedCardBrief,
+} from '@/src/lib/deptWorkflow';
 import CandidatesTab from './CandidatesTab';
 import MarketingTab from './MarketingTab';
 import SalesTab from './SalesTab';
-import { TaskAssignmentModal } from './CEOAgentTaskAssignment';
-import { useGetTasksQuery, useApproveTasksMutation } from '../redux/api/tasksApi';
+import { useGetTasksQuery } from '../redux/api/tasksApi';
+import { TASKS_QUERY_OPTIONS } from '../redux/api/tasksQueryDefaults';
 import { useAppSelector, useAppDispatch } from '../redux/hooks';
 import { RootState } from '../redux/store';
 import { 
@@ -48,25 +57,25 @@ const AGENT_SPECIFICS = {
       { id: '1', title: 'John Doe - Principal AI Architect', date: '04 May', priority: 'HIGH', stat1: '98%', stat2: '12y', stat3: '94' },
       { id: '2', title: 'Jane Smith - Senior Product Designer', date: '03 May', priority: 'MED', stat1: '85%', stat2: '8y', stat3: '88' }
     ],
-    insights: 'Talent pool shows 15% increase in cross-functional AI expertise. Top candidates prioritize remote-first autonomy.',
+    insights: 'Hiring signals skew toward senior builders who can own outcomes end to end. Remote-first remains the default expectation for top talent.',
     results: [
-      { type: 'CANDIDATE', priority: 'HIGH', title: 'John Doe (Principal AI Architect)', desc: 'Expertise in RAG and agentic workflows.', meta: 'Matches technical depth + leadership scaling.' }
+      { type: 'CANDIDATE', priority: 'HIGH', title: 'John Doe (Principal AI Architect)', desc: 'Deep product engineering with clear ownership stories.', meta: 'Strong match for technical depth and team leadership.' }
     ],
     badge: 'bg-purple-500/10 text-purple-400',
     border: 'border-purple-500/30',
     glow: 'shadow-[0_0_15px_rgba(168,85,247,0.1)]',
     text: 'text-purple-400',
     icon: '👥',
-    subtitle: 'Team management, performance, tasks'
+    subtitle: 'Hiring, reviews, and candidate experience in one view'
   },
   Sales: {
     tabName: 'Leads',
     stats: ['Potential', 'Value', 'Score'],
     items: [
-      { id: '1', title: 'Tesla Inc. - Autonomous Fleet Project', date: '02 May', priority: 'HIGH', stat1: '9.2', stat2: '$450K', stat3: '95' },
+      { id: '1', title: 'Tesla Inc. — Fleet modernization program', date: '02 May', priority: 'HIGH', stat1: '9.2', stat2: '$450K', stat3: '95' },
       { id: '2', title: 'Groq - Neural Dashboard Integration', date: '01 May', priority: 'HIGH', stat1: '8.8', stat2: '$1.2M', stat3: '92' }
     ],
-    insights: 'Enterprise accounts responding 40% faster to value-driven automation narratives than cost-saving proposals.',
+    insights: 'Enterprise buyers move faster when the story leads with measurable impact—not price cuts alone. Value-led narratives are winning the inbox.',
     results: [
       { type: 'LEAD', priority: 'HIGH', title: 'Tesla Inc. (Operations Dept)', desc: 'Decision maker engaged with whitepaper.', meta: 'Direct ROI alignment.' }
     ],
@@ -75,7 +84,7 @@ const AGENT_SPECIFICS = {
     glow: 'shadow-[0_0_15px_rgba(16,185,129,0.1)]',
     text: 'text-emerald-400',
     icon: '🔥',
-    subtitle: 'Leads pipeline, proposals, deal tracking'
+    subtitle: 'Pipeline health, proposals, and revenue motion'
   },
   Finance: {
     tabName: 'Invoices',
@@ -84,16 +93,16 @@ const AGENT_SPECIFICS = {
       { id: '1', title: 'Invoice #8842 - AWS Infrastructure', date: '28 Apr', priority: 'HIGH', stat1: '$12.4K', stat2: '14d', stat3: '9.4' },
       { id: '2', title: 'Invoice #8839 - NVIDIA H100 Cluster', date: '25 Apr', priority: 'LOW', stat1: '$840K', stat2: '2d', stat3: '1.2' }
     ],
-    insights: 'Late payments trending up in SaaS sector. Automated reminder sequences reducing DPO by 12 days.',
+    insights: 'SaaS collections are stretching slightly; polite, well-timed follow-ups are shortening days payable without damaging relationships.',
     results: [
-      { type: 'INVOICE', priority: 'HIGH', title: 'Amazon Web Services ($12,400)', desc: 'Payment overdue. Autonomous recovery active.', meta: 'Persistence + polite escalation formula.' }
+      { type: 'INVOICE', priority: 'HIGH', title: 'Amazon Web Services ($12,400)', desc: 'Invoice past terms with a clear payment path.', meta: 'Cadence that stays professional while protecting cash flow.' }
     ],
     badge: 'bg-amber-500/10 text-amber-400',
     border: 'border-amber-500/30',
     glow: 'shadow-[0_0_15px_rgba(245,158,11,0.1)]',
     text: 'text-amber-400',
     icon: '💰',
-    subtitle: 'Invoices, expenses, revenue tracking'
+    subtitle: 'Cash flow, invoices, and financial clarity'
   },
   Marketing: {
     tabName: 'Reels',
@@ -102,32 +111,256 @@ const AGENT_SPECIFICS = {
       { id: '1', title: 'Maine Claude ko apna business assistant bana diya...', date: '24 Apr', priority: 'LOW', stat1: '8.1K', stat2: '0.1K', stat3: '162' },
       { id: '2', title: 'Llama 3.3 just dropped on Groq. 💥 Most powerful...', date: '24 Apr', priority: 'LOW', stat1: '10.7K', stat2: '0.2K', stat3: '3' }
     ],
-    insights: 'Top-performing reels (560K+ views) focus on tangible workflow replacements and data-driven results.',
+    insights: 'Standout social posts pair a crisp hook with proof—before/after, numbers, or a single memorable takeaway that fits in the first second.',
     results: [
-      { type: 'RESULTS', priority: 'HIGH', title: '"I stopped manually responding to DMs..."', desc: 'Handling customer service at scale with proof.', meta: 'Workflow replacement + quantifiable output formula.' }
+      { type: 'RESULTS', priority: 'HIGH', title: '"I stopped manually responding to DMs..."', desc: 'Customer conversations handled at scale—with receipts.', meta: 'High retention through faster, warmer replies.' }
     ],
     badge: 'bg-pink-500/10 text-pink-400',
     border: 'border-pink-500/30',
     glow: 'shadow-[0_0_15px_rgba(236,72,153,0.1)]',
     text: 'text-pink-400',
     icon: '📣',
-    subtitle: 'Instagram, content strategy, growth'
+    subtitle: 'Social performance, creative direction, growth'
   },
 
   Operations: {
     tabName: 'Deployments',
     stats: ['Uptime', 'Errors', 'Latency'],
     items: [],
-    insights: 'System stability remains at 99.99%. Cloud costs optimized by 15%.',
+    insights: 'Reliability holds at enterprise-grade levels, with meaningful savings on cloud spend after rightsizing and smarter scheduling.',
     results: [],
     badge: 'bg-blue-500/10 text-blue-400',
     border: 'border-blue-500/30',
     glow: 'shadow-[0_0_15px_rgba(59,130,246,0.1)]',
     text: 'text-blue-400',
     icon: '⚙️',
-    subtitle: 'Projects, deadlines, client delivery'
+    subtitle: 'Delivery, reliability, and how work ships'
   }
 };
+
+/** HR task / selector row: resolve single analysis record (object), not array. */
+function getHrAnalysisRecord(row: any): Record<string, any> | null {
+  if (!row) return null;
+  if (Array.isArray(row.candidate_analysis) && row.candidate_analysis.length > 0) {
+    const first = row.candidate_analysis[0];
+    if (first && typeof first === 'object') return first as Record<string, any>;
+  }
+  const direct = row.analysis;
+  if (direct && typeof direct === 'object' && !Array.isArray(direct)) return direct as Record<string, any>;
+  return null;
+}
+
+function hrDecision(row: any): string {
+  return String(getHrAnalysisRecord(row)?.decision || '').toUpperCase();
+}
+
+/** Map backend `/analysis/hr` payload + `details.*` to Overview UI shape. */
+function buildHROverviewFromAnalysisRecord(row: any, analysisRecord: Record<string, any> | null): {
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  recommendations: string[];
+} | null {
+  if (!analysisRecord || typeof analysisRecord !== 'object') return null;
+  const details =
+    analysisRecord.details && typeof analysisRecord.details === 'object'
+      ? (analysisRecord.details as Record<string, any>)
+      : {};
+  const name = String(row?.name || row?.display_name || row?.applicantName || '').trim();
+
+  const toStrList = (arr: unknown) =>
+    Array.isArray(arr) ? arr.map((x) => String(x).trim()).filter((x) => x.length > 0) : [];
+
+  const briefing =
+    [
+      details.executive_briefing,
+      details.summary,
+      analysisRecord.summary,
+      row?.ai_summary,
+      row?.aiSummary,
+    ]
+      .map((x) => String(x || '').trim())
+      .find((x) => x.length > 0) || '';
+
+  const reason = String(analysisRecord.reason || '').trim();
+  let summary = briefing;
+  if (!summary && name && reason) summary = `Candidate: ${name} — ${reason}`;
+  else if (!summary && name) {
+    const score = analysisRecord.match_score;
+    summary =
+      score != null && score !== ''
+        ? `Candidate: ${name} — Match score ${score}% (${String(analysisRecord.decision || 'N/A').toUpperCase()}).`
+        : `Candidate: ${name} — AI assessment on file.`;
+  } else if (!summary && reason) summary = reason;
+  else if (!summary && analysisRecord.match_score != null) {
+    summary = `Match score ${analysisRecord.match_score}% — ${reason || String(analysisRecord.decision || '').toUpperCase() || 'HR review'}.`;
+  }
+  if (!summary) return null;
+
+  let strengths = toStrList(details.strengths);
+  if (!strengths.length) strengths = toStrList(details.pros);
+  if (!strengths.length) strengths = toStrList(analysisRecord.matched_skills);
+  if (!strengths.length && reason) strengths = [`Assessment: ${reason}`];
+
+  let weaknesses = toStrList(details.weaknesses);
+  if (!weaknesses.length) weaknesses = toStrList(details.cons);
+  if (!weaknesses.length) weaknesses = toStrList(analysisRecord.missing_skills);
+
+  const recommendations: string[] = [];
+  const strat = String(details.strategic_recommendation || '').trim();
+  if (strat) recommendations.push(strat);
+  const interviewPlan = String(details.interview_plan || '').trim();
+  if (interviewPlan) recommendations.push(interviewPlan);
+  recommendations.push(...toStrList(details.improvement_suggestions));
+  const improvement = String(analysisRecord.improvement || '').trim();
+  if (improvement && !recommendations.includes(improvement)) recommendations.push(improvement);
+  if (!recommendations.length) {
+    recommendations.push('Proceed with structured interview and calibrated scorecard validation.');
+  }
+
+  return { summary, strengths, weaknesses, recommendations };
+}
+
+function isPlaceholderRoleString(value: string) {
+  const t = String(value || '').trim().toLowerCase();
+  return !t || t === 'unspecified' || t === 'unspecified role' || t === 'unknown';
+}
+
+/** CEO report shortlisted cards — same idea as backend `resolveReportRole` (cached reports, old payloads). */
+function formatShortlistedCardRole(c: { role?: string; strengths?: string[] }) {
+  const primary = String(c?.role || '').trim();
+  if (!isPlaceholderRoleString(primary)) return primary;
+  const skills = Array.isArray(c.strengths) ? c.strengths.filter(Boolean).map(String) : [];
+  if (skills.length) return `Skills focus: ${skills.slice(0, 4).join(', ')}`;
+  return 'Role not stated on application';
+}
+
+function pickMarketingText(...vals: unknown[]): string {
+  for (const v of vals) {
+    if (v == null) continue;
+    if (Array.isArray(v)) {
+      const inner = v
+        .map((x) => String(x).trim())
+        .filter((x) => x.length > 0 && x !== 'undefined' && x !== 'null');
+      if (inner.length) return inner.join('; ');
+      continue;
+    }
+    const s = String(v).trim();
+    if (s.length > 0 && s !== 'undefined' && s !== 'null') return s;
+  }
+  return '';
+}
+
+function marketingBulletList(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .map((x) => String(x).trim())
+      .filter((x) => x.length > 0 && x !== 'undefined' && x !== 'null');
+  }
+  if (raw != null) {
+    const s = String(raw).trim();
+    if (s.length > 0 && s !== 'undefined') return [s];
+  }
+  return [];
+}
+
+/** Marketing Overview: never interpolate `undefined`; synthesize useful copy from task + metadata + any AI fields. */
+function buildMarketingOverviewAnalysis(profile: any): {
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  recommendations: string[];
+} | null {
+  if (!profile) return null;
+  const meta = profile.metadata && typeof profile.metadata === 'object' ? profile.metadata : {};
+  const rawObj =
+    (Array.isArray(profile.marketing_analysis) && profile.marketing_analysis[0] && typeof profile.marketing_analysis[0] === 'object'
+      ? profile.marketing_analysis[0]
+      : null) ||
+    (profile.analysis && typeof profile.analysis === 'object' && !Array.isArray(profile.analysis) ? profile.analysis : null);
+
+  const handle =
+    pickMarketingText(
+      profile.handle_name,
+      meta.handle_name,
+      meta.profile_name,
+      meta.company_name,
+      String(profile.title || '').match(/(?:Viral Audit|Instagram presence review):\s*(.+)$/i)?.[1]
+    ) || 'this brand';
+
+  const platform = pickMarketingText(profile.platform, meta.platform) || 'Instagram';
+
+  let aiCore = pickMarketingText(
+    rawObj?.summary,
+    rawObj?.reason,
+    rawObj?.overview,
+    rawObj?.executive_summary,
+    rawObj?.details?.summary,
+    profile.aiSummary,
+    profile.summary,
+    profile.description,
+    meta.analysis_summary
+  );
+  if (aiCore) aiCore = replaceInstagramUrlsInText(aiCore);
+
+  const igUrl = pickMarketingText(meta.instagram_url);
+  const igHandle = igUrl ? extractInstagramHandle(igUrl) : null;
+  const igDisplay = igHandle ? `@${igHandle}` : '';
+  const business = pickMarketingText(meta.business_type, meta.budget);
+  const competitors = pickMarketingText(meta.competitors);
+
+  const summaryBody =
+    aiCore ||
+    [
+      `We’re lining up a clear read on ${handle} on ${platform}—what’s working, what’s flat, and where attention converts.`,
+      igUrl ? `Profile on file: ${igDisplay || 'Instagram (linked)'}.` : null,
+      business ? `Goals and constraints captured: ${business}.` : null,
+      competitors ? `Competitive set noted for positioning: ${competitors}.` : null,
+      'As richer performance signals arrive, we’ll translate them into a tight set of creative bets and a calendar you can ship with confidence.',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+  let strengths = marketingBulletList(rawObj?.pros || rawObj?.strengths);
+  if (!strengths.length) {
+    strengths = [
+      igUrl
+        ? 'Your Instagram destination is documented so every recommendation ties back to a real profile.'
+        : 'Brand and channel context is captured so recommendations stay grounded in how you show up today.',
+      business
+        ? `Your positioning notes (${business}) give us a credible lens for message-market fit.`
+        : 'There’s room to sharpen the story once we align themes with what your audience saves and shares.',
+      'Short-form creative plus one flagship call-to-action is the fastest path to clearer conversion signals.',
+    ];
+  }
+
+  let weaknesses = marketingBulletList(rawObj?.cons || rawObj?.weaknesses);
+  if (!weaknesses.length) {
+    weaknesses = [
+      rawObj
+        ? 'Finer-grained performance context will make the difference between “good ideas” and “ideas we can bet on.”'
+        : 'We’re still early—recommendations are directional until recent posts and outcomes are reflected in the workspace.',
+      'Peer benchmarks will sharpen once we compare engagement quality—not just volume—against similar accounts.',
+      'Creative themes should be refreshed on a steady rhythm as new results land, so the plan stays relevant.',
+    ];
+  }
+
+  const rec =
+    pickMarketingText(
+      rawObj?.content_ideas,
+      rawObj?.recommendations,
+      rawObj?.strategy,
+      rawObj?.improvement
+    ) ||
+    'Run a two-week sprint: three distinct story angles per week, refresh creative weekly, and point every post to one measurable outcome on your site. Track saves, shares, and qualified conversations—not vanity alone.';
+
+  return {
+    summary: `${handle} on ${platform} — ${summaryBody}`,
+    strengths,
+    weaknesses,
+    recommendations: [rec],
+  };
+}
 
 export default function NeuralWorkflowSystem() {
   const [showWorkflowModal, setShowWorkflowModal] = useState(false);
@@ -145,7 +378,6 @@ export default function NeuralWorkflowSystem() {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [selectedRoadmap, setSelectedRoadmap] = useState<{title: string, dept: string, content: any} | null>(null);
   const [showRoadmapModal, setShowRoadmapModal] = useState(false);
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [isSendingEmail, setIsSendingEmail] = useState<string | null>(null);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
@@ -209,24 +441,32 @@ export default function NeuralWorkflowSystem() {
     }
   };
 
-  const { data: allTasks = [], isLoading: isLoadingTasks, refetch: refetchTasks } = useGetTasksQuery(undefined, {
-    pollingInterval: 5000,
-  });
-  const [approveTasks] = useApproveTasksMutation();
+  const { data: allTasks = [], isLoading: isLoadingTasks, refetch: refetchTasks } = useGetTasksQuery(
+    undefined,
+    TASKS_QUERY_OPTIONS
+  );
 
-  const handleApproveAll = async () => {
-    const loadingId = addToast('🚀 Initializing all department workers...', 'loading');
-    try {
-      await approveTasks().unwrap();
-      removeToast(loadingId);
-      addToast('✅ All tasks approved and simulation started!', 'success');
-    } catch (err) {
-      removeToast(loadingId);
-      console.error('Approve all error:', err);
-      addToast('❌ Global approval failed', 'error');
-    }
-  };
-  
+  const hasRunningWorkflowTask = React.useMemo(
+    () =>
+      allTasks.some((t) => {
+        const s = String(t.status ?? '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, '_');
+        return s === 'running' || s === 'working' || s === 'in_progress';
+      }),
+    [allTasks]
+  );
+
+  useEffect(() => {
+    if (!hasRunningWorkflowTask) return;
+    const intervalMs = 5000;
+    const id = window.setInterval(() => {
+      void refetchTasks();
+    }, intervalMs);
+    return () => window.clearInterval(id);
+  }, [hasRunningWorkflowTask, refetchTasks]);
+
   // Local state for UI only
   const [description, setDescription] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -234,23 +474,25 @@ export default function NeuralWorkflowSystem() {
 
   const completedDepts = React.useMemo(() => {
     const depts = new Set<string>();
-    allTasks.forEach(t => {
-      if (t.status?.toUpperCase() === 'COMPLETED' || t.status?.toUpperCase() === 'SUCCESS') {
-        depts.add(t.department);
-      }
+    allTasks.forEach((t) => {
+      if (isDeptTaskSuccessfullyCompleted(t)) depts.add(t.department);
     });
     return depts;
   }, [allTasks]);
 
   const fetchTasks = () => refetchTasks();
 
-  useEffect(() => {
-    refetchTasks();
-  }, [refetchTasks, selectedDept]);
-
   // AUTO-GENERATE CEO REPORT: fires when HR Ideas tab is open and analyzed candidates exist
   useEffect(() => {
     if (selectedDept !== 'HR' || activeTab !== 'Ideas') return;
+    const tasksForDept = allTasks.filter((t) => t.department === 'HR');
+    const hrLatest =
+      tasksForDept.length === 0
+        ? null
+        : [...tasksForDept].sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )[0];
+    if (hrLatest && !isDeptTaskSuccessfullyCompleted(hrLatest)) return;
     if (isGeneratingReport || hrReport) return;
     const analyzedCount = allHRData.filter((c: any) => {
       const analysis = Array.isArray(c?.candidate_analysis) ? c.candidate_analysis[0] : c?.analysis;
@@ -261,7 +503,7 @@ export default function NeuralWorkflowSystem() {
     if (analyzedCount > 0) {
       generateHRReport(true); // Force generation since we have analyzed candidates
     }
-  }, [selectedDept, activeTab, allHRData, hrReport, isGeneratingReport]);
+  }, [selectedDept, activeTab, allTasks, allHRData, hrReport, isGeneratingReport]);
 
 
   const fetchCandidates = async () => {
@@ -415,9 +657,20 @@ export default function NeuralWorkflowSystem() {
     return [...tasksForDept].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
   };
 
+  const latestModalDeptTask = React.useMemo(() => {
+    if (!selectedDept) return null;
+    const tasksForDept = allTasks.filter((t) => t.department === selectedDept);
+    if (tasksForDept.length === 0) return null;
+    return [...tasksForDept].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0];
+  }, [allTasks, selectedDept]);
+
+  const deptInsightsBlocked = shouldBlockDeptInsights(latestModalDeptTask);
+
   return (
-    <div className="min-h-screen bg-[#050505] text-[#d1d1d1] font-sans p-6 overflow-x-hidden selection:bg-orange-500/30">
-      <header className="max-w-[1400px] mx-auto flex items-center justify-between mb-8 px-4">
+    <div className="min-h-screen w-full max-w-[100vw] bg-[#050505] text-[#d1d1d1] font-sans overflow-x-hidden px-0 py-6 sm:py-8 selection:bg-orange-500/30">
+      <header className="w-full max-w-none mx-auto flex items-center justify-between mb-8 px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center shadow-lg shadow-orange-600/20">
             <span className="text-white text-xl font-bold italic">P</span>
@@ -437,7 +690,7 @@ export default function NeuralWorkflowSystem() {
         </div>
       </header>
 
-      <main className="max-w-[1400px] mx-auto space-y-10 pb-24">
+      <main className="w-full max-w-none mx-auto space-y-10 pb-24 px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
         
         {/* CEO CONTROL AGENT HERO */}
         <section className="bg-[#0f0f0f] border border-[#1a1a1a] rounded-[2.5rem] p-10 flex flex-col md:flex-row items-center gap-10 relative overflow-hidden">
@@ -448,26 +701,12 @@ export default function NeuralWorkflowSystem() {
           </div>
           <div className="flex-1 space-y-4">
             <h2 className="text-3xl font-bold text-white tracking-tight italic uppercase">CEO Control Agent</h2>
-            <p className="text-sm text-[#888] font-medium uppercase tracking-widest">Autonomous Orchestration · Global Scaling</p>
-            <div className="flex flex-wrap gap-3 mt-4">
-              <button 
-                onClick={() => setIsAssignModalOpen(true)}
-                className="px-8 py-3 bg-indigo-600 text-white text-[10px] font-black rounded-lg uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-indigo-600/20"
-              >
-                Assign Task
-              </button>
-              <button 
-                onClick={handleApproveAll}
-                className="px-8 py-3 bg-white text-black text-[10px] font-black rounded-lg uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/5"
-              >
-                Approve & Initialize All
-              </button>
-            </div>
+            <p className="text-sm text-[#888] font-medium uppercase tracking-widest">Cross-team clarity · Faster decisions · Cleaner execution</p>
           </div>
         </section>
 
         {/* --- Task Queue Integration --- */}
-        <TaskQueue />
+        <TaskQueue tasks={allTasks} isLoading={isLoadingTasks} />
 
         {/* --- Department Agents Grid --- */}
         <div className="space-y-4">
@@ -478,9 +717,15 @@ export default function NeuralWorkflowSystem() {
               const activeTask = getActiveTaskForDept(dept);
               const status = activeTask?.status?.toLowerCase() || 'idle';
               
-              const isWorking = runningDepts.has(dept) || status === 'running' || status === 'working';
-              const isWaiting = (status === 'waiting_for_ceo' || status === 'pending') && !isWorking;
-              const isDone = status === 'completed' || status === 'success' || (activeTask?.progress === 100);
+              const isDone =
+                Boolean(activeTask) && isDeptTaskSuccessfullyCompleted(activeTask);
+              const isWorking =
+                (runningDepts.has(dept) || status === 'running' || status === 'working' || status === 'in_progress') &&
+                !isDone;
+              const isWaiting =
+                (status === 'waiting_for_ceo' || status === 'pending') && !isWorking && !isDone;
+
+              const doneBrief = deptCompletedCardBrief(dept, activeTask?.title);
 
               return (
                 <div key={dept} className={`bg-[#0f0f0f] rounded-[2rem] p-6 border ${isDone ? 'border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.1)]' : 'border-[#1a1a1a]'} shadow-xl flex flex-col justify-between min-h-[240px] transition-all duration-500 hover:border-[#333]`}>
@@ -529,19 +774,39 @@ export default function NeuralWorkflowSystem() {
                     'border-[#1a1a1a] bg-transparent text-[#555] flex items-center italic'
                   }`}>
                     {isWorking ? (
-                      <span className="text-yellow-400 leading-relaxed animate-pulse">Running autonomous mission for {dept} department...</span>
+                      <div className="space-y-2">
+                        <p className="text-yellow-400 leading-relaxed animate-pulse">
+                          {deptIdleProcessingLine(dept)}
+                        </p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-yellow-500/60">
+                          Processing… · AI is working…
+                        </p>
+                        {activeTask?.title ? (
+                          <p className="text-[10px] text-white/40 font-bold truncate" title={activeTask.title}>
+                            {activeTask.title}
+                          </p>
+                        ) : null}
+                      </div>
                     ) : isDone ? (
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
                           <span className="px-1.5 py-0.5 bg-emerald-500 text-[8px] font-black text-black rounded uppercase tracking-tighter shadow-lg">Success</span>
-                          <span className="text-emerald-400 text-[10px] font-black uppercase tracking-widest">Successfully Completed</span>
+                          <span className="text-emerald-400 text-[10px] font-black uppercase tracking-widest">{doneBrief.title}</span>
                         </div>
-                        <p className="text-emerald-400/80 leading-relaxed italic line-clamp-2">
-                          {activeTask?.description || 'Mission objectives achieved successfully.'}
+                        <p className="text-emerald-400/90 leading-relaxed line-clamp-3">
+                          {doneBrief.body}
                         </p>
                       </div>
                     ) : activeTask ? (
-                      <span className="text-orange-400 leading-relaxed">{activeTask.description || `Task: ${activeTask.title}`}</span>
+                      <div className="space-y-2">
+                        <p className="text-orange-400 leading-relaxed">{deptIdleProcessingLine(dept)}</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-orange-500/60">
+                          Queued or awaiting approval — insights stay hidden until this run completes.
+                        </p>
+                        {activeTask.title ? (
+                          <p className="text-[10px] text-white/40 font-bold truncate">{activeTask.title}</p>
+                        ) : null}
+                      </div>
                     ) : (
                       "Standing by for tasks..."
                     )}
@@ -567,20 +832,11 @@ export default function NeuralWorkflowSystem() {
         </div>
       </main>
       
-      <TaskAssignmentModal 
-        isOpen={isAssignModalOpen} 
-        onClose={() => setIsAssignModalOpen(false)} 
-        onTaskAssigned={() => {
-          fetchTasks();
-          setIsAssignModalOpen(false);
-        }}
-      />
-
       {/* Legacy Details Modal View */}
       {showWorkflowModal && selectedDept && (
         <div className="fixed inset-0 z-[200] flex animate-in fade-in duration-300">
-          <div className="flex-1 bg-[#050505] overflow-y-auto p-12 custom-scrollbar">
-            <div className="max-w-4xl mx-auto space-y-12">
+          <div className="flex-1 min-w-0 bg-[#050505] overflow-y-auto py-8 sm:py-10 px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 2xl:px-14 custom-scrollbar">
+            <div className="w-full max-w-none mx-auto space-y-12">
               <div className="flex justify-between items-start">
                 <button onClick={() => setShowWorkflowModal(false)} className="text-sm font-bold text-[#555] hover:text-white flex items-center gap-2 transition-colors"><span>←</span> Back</button>
                 <div className="flex items-center gap-6">
@@ -608,83 +864,136 @@ export default function NeuralWorkflowSystem() {
                 ))}
               </div>
 
-              <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="w-full min-w-0 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <>
                     {activeTab === 'Overview' && (
-                  <div className="space-y-10">
+                  <div className="w-full space-y-10">
                     {(() => {
+                      if (deptInsightsBlocked) {
+                        return (
+                          <div className="bg-[#0f0f0f] border border-orange-500/20 p-12 sm:p-16 rounded-[3rem] flex flex-col items-center text-center space-y-6">
+                            <div className="w-20 h-20 rounded-3xl bg-orange-500/10 border border-orange-500/25 flex items-center justify-center text-4xl animate-pulse">
+                              ✦
+                            </div>
+                            <div className="space-y-3 max-w-lg">
+                              <p className="text-white text-xl font-bold tracking-tight">{deptProcessingHeadline(selectedDept)}</p>
+                              <p className="text-[#888] text-sm font-medium leading-relaxed">{deptProcessingSubcopy(selectedDept)}</p>
+                              {latestModalDeptTask?.title ? (
+                                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/35">
+                                  Active run: {latestModalDeptTask.title}
+                                </p>
+                              ) : null}
+                              <p className="text-[10px] font-black uppercase tracking-[0.35em] text-orange-500/80">
+                                Processing… · AI is working…
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      }
+
                       let analysis: any = null;
 
                       if (selectedDept === 'HR') {
-                        // For HR, override the generic task overview with the latest Shortlisted candidate's deep AI insights
-                        const latestShortlisted = allHRData.filter(c => {
-                          const dec = c.analysis && Array.isArray(c.analysis) && c.analysis[0]?.decision?.toUpperCase();
-                          return dec === 'SHORTLISTED' || dec === 'SELECTED' || dec === 'HIRE';
-                        })[0];
-                        if (latestShortlisted) {
-                          const latestCandidateAnalysis = Array.isArray(latestShortlisted.candidate_analysis)
-                            ? latestShortlisted.candidate_analysis[0]
-                            : null;
-                          const details = latestCandidateAnalysis?.details || {};
-                          analysis = {
-                            summary: `Candidate: ${latestShortlisted.name} - ${details.summary || latestCandidateAnalysis?.reason || 'Candidate analyzed and shortlisted by AI.'}`,
-                            strengths: details.pros || ['Strong technical background', 'Good communication skills'],
-                            weaknesses: details.cons || ['Requires ramp-up time on specific internal tools'],
-                            recommendations: [details.interview_plan || 'Proceed with technical interview immediately.']
-                          };
+                        const shortlistedRow = allHRData.find((c) => {
+                          const d = hrDecision(c);
+                          return d === 'SHORTLISTED' || d === 'SELECTED' || d === 'HIRE';
+                        });
+                        const prioritizedRow =
+                          shortlistedRow ||
+                          allHRData.find((c) => getHrAnalysisRecord(c)) ||
+                          null;
+
+                        if (prioritizedRow) {
+                          const rec = getHrAnalysisRecord(prioritizedRow);
+                          analysis = buildHROverviewFromAnalysisRecord(prioritizedRow, rec);
                         } else {
-                          // Fallback to generic task if no candidates are shortlisted yet
                           const latestTask = [...allTasks]
-                            .filter(t => t.department === selectedDept)
-                            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-                          analysis = latestTask?.analysis;
+                            .filter((t) => t.department === selectedDept)
+                            .sort(
+                              (a, b) =>
+                                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                            )[0] as any;
+                          const raw = latestTask?.analysis;
+                          const rec =
+                            raw && typeof raw === 'object' && !Array.isArray(raw)
+                              ? raw
+                              : Array.isArray(raw)
+                                ? raw[0] || null
+                                : null;
+                          analysis = buildHROverviewFromAnalysisRecord(latestTask || {}, rec);
                         }
                       } else if (selectedDept === 'Marketing') {
-                        // For Marketing, override the generic task overview with the latest Analyzed profile
-                        const latestAnalyzed = allMarketingData.filter(p => p.analysis)[0];
-                        if (latestAnalyzed) {
-                          const analysisObj = Array.isArray(latestAnalyzed.marketing_analysis)
-                            ? latestAnalyzed.marketing_analysis[0]
-                            : null;
-                          if (analysisObj) {
-                            analysis = {
-                              summary: `Marketing Profile: ${latestAnalyzed.handle_name} (${latestAnalyzed.platform}) - ${analysisObj.summary || analysisObj.reason}`,
-                              strengths: analysisObj.pros || ['Good engagement rate', 'Consistent posting'],
-                              weaknesses: analysisObj.cons || ['Low follower growth', 'Needs more video content'],
-                              recommendations: [analysisObj.content_ideas || 'Focus on viral short-form video.']
-                            };
-                          }
-                        } else {
-                          // Fallback to generic task
-                          const latestTask = [...allTasks]
-                            .filter(t => t.department === selectedDept)
-                            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-                          analysis = latestTask?.analysis;
+                        const latestMk = allMarketingData[0];
+                        if (latestMk) {
+                          analysis = buildMarketingOverviewAnalysis(latestMk);
                         }
                         if (!analysis) {
                           const latestTask = [...allTasks]
-                            .filter(t => t.department === selectedDept)
-                            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-                          analysis = latestTask?.analysis;
+                            .filter((t) => t.department === selectedDept)
+                            .sort(
+                              (a, b) =>
+                                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                            )[0];
+                          if (latestTask) {
+                            analysis = buildMarketingOverviewAnalysis({
+                              ...latestTask,
+                              handle_name: (latestTask as any).title,
+                              platform: 'Marketing',
+                              marketing_analysis: [],
+                            });
+                          }
                         }
                       } else if (selectedDept === 'Sales') {
                         const latestSales = allSalesData[0] as any;
                         if (latestSales) {
+                          const weaknesses =
+                            (latestSales.analysis?.gap_list as string[] | undefined) ||
+                            (Array.isArray(latestSales.analysis?.weaknesses) ? latestSales.analysis.weaknesses : null) ||
+                            (Array.isArray(latestSales.weaknesses) ? latestSales.weaknesses : null) ||
+                            [];
                           analysis = {
-                            summary: latestSales.analysis?.overview || latestSales.overview || "Generating sales strategy...",
-                            strengths: [latestSales.analysis?.target_customers || latestSales.target_customers || "High-value lead identification"],
-                            weaknesses: ['Competitor saturation', 'Cold reach limits'],
-                            recommendations: [latestSales.analysis?.strategy || latestSales.strategy || "Optimize outreach funnel"]
+                            summary:
+                              latestSales.analysis?.overview ||
+                              latestSales.overview ||
+                              'Pipeline context is on file—prioritize the accounts with clearest intent signals and the shortest path to revenue.',
+                            strengths: [
+                              latestSales.analysis?.target_customers ||
+                                latestSales.target_customers ||
+                                'Opportunities are segmented so outreach stays specific, not generic.',
+                            ],
+                            weaknesses:
+                              weaknesses.length > 0
+                                ? weaknesses.map((x: unknown) => String(x))
+                                : [
+                                    'Sharpen follow-up velocity so warm conversations do not cool while internal reviews run long.',
+                                  ],
+                            recommendations: [
+                              latestSales.analysis?.strategy ||
+                                latestSales.strategy ||
+                                'Align the next sprint around one flagship offer proof point and tighten the qualification checklist your reps use daily.',
+                            ],
                           };
                         }
                       } else if (selectedDept === 'Operations') {
                         const latestOps = allOpsData[0] as any;
                         if (latestOps) {
                           analysis = {
-                            summary: latestOps.analysis?.summary || latestOps.summary || "Optimizing infrastructure...",
-                            strengths: latestOps.analysis?.improvements || latestOps.improvements || [],
-                            weaknesses: latestOps.analysis?.inefficiencies || latestOps.inefficiencies || [],
-                            recommendations: latestOps.analysis?.execution_steps || latestOps.execution_steps || []
+                            summary:
+                              latestOps.analysis?.summary ||
+                              latestOps.summary ||
+                              'Operational posture is summarized for leadership: throughput, friction points, and what to automate next.',
+                            strengths:
+                              (latestOps.analysis?.improvements as string[] | undefined) ||
+                              latestOps.improvements ||
+                              [],
+                            weaknesses:
+                              (latestOps.analysis?.inefficiencies as string[] | undefined) ||
+                              latestOps.inefficiencies ||
+                              [],
+                            recommendations:
+                              (latestOps.analysis?.execution_steps as string[] | undefined) ||
+                              latestOps.execution_steps ||
+                              [],
                           };
                         }
                       } else if (selectedDept === 'Finance') {
@@ -693,8 +1002,14 @@ export default function NeuralWorkflowSystem() {
                           analysis = {
                             summary: latestFinance.summary,
                             strengths: latestFinance.highlights || [],
-                            weaknesses: ['Budget constraints', 'High burn rate'],
-                            recommendations: latestFinance.recommendations || []
+                            weaknesses:
+                              Array.isArray(latestFinance.watch_items) &&
+                              latestFinance.watch_items.length > 0
+                                ? latestFinance.watch_items.map((x: unknown) => String(x))
+                                : [
+                                    'Use the next reporting window to confirm burn and collections trends before expanding discretionary spend.',
+                                  ],
+                            recommendations: latestFinance.recommendations || [],
                           };
                         }
                       } else {
@@ -712,7 +1027,7 @@ export default function NeuralWorkflowSystem() {
                           </div>
                           <div>
                             <p className="text-white text-xl font-bold tracking-tight mb-2">No Strategic Data Available</p>
-                            <p className="text-[#555] text-xs max-w-[300px] mx-auto uppercase tracking-widest font-black">Groq AI is currently auditing this department workflow. Results will stream in real-time.</p>
+                            <p className="text-[#555] text-xs max-w-[300px] mx-auto uppercase tracking-widest font-black">We’re preparing this department’s view. Connect a plan or refresh data and the highlights will appear here.</p>
                           </div>
                           <button 
                             onClick={() => setShowPlanModal(true)}
@@ -729,14 +1044,15 @@ export default function NeuralWorkflowSystem() {
                           <div className="bg-[#0f0f0f] border border-[#1a1a1a] p-10 rounded-[2.5rem] space-y-6">
                             <h3 className="text-xs font-black uppercase tracking-widest text-orange-500">AI Executive Briefing</h3>
                             <div className="space-y-4">
-                              {(analysis.summary || analysis.final_summary || "Overview generated successfully.")
+                              {(analysis.summary || analysis.final_summary || 'Overview generated successfully.')
                                 .split(/(?=Week \d:)/)
+                                .map((segment: string) => segment.trim())
+                                .filter((segment: string) => segment.length > 0 && segment !== 'undefined')
                                 .map((segment: string, idx: number) => (
                                   <p key={idx} className="text-lg font-bold text-slate-100 leading-relaxed tracking-tight">
-                                    {segment.trim()}
+                                    {segment}
                                   </p>
-                                ))
-                              }
+                                ))}
                             </div>
                           </div>
 
@@ -768,7 +1084,9 @@ export default function NeuralWorkflowSystem() {
                           <div className="bg-[#0f0f0f] border border-[#1a1a1a] p-8 rounded-[2rem]">
                             <h4 className="text-[10px] font-black uppercase tracking-widest text-blue-500 mb-4">Strategic Recommendation</h4>
                             <div className="flex gap-2 flex-wrap">
-                               {(analysis.recommendations || [analysis.strategy_content]).map((item: string, i: number) => (
+                               {(analysis.recommendations || [analysis.strategy_content])
+                                 .filter((item: unknown) => item != null && String(item).trim().length > 0)
+                                 .map((item: string, i: number) => (
                                  <span key={i} className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-black text-white">
                                    {item}
                                  </span>
@@ -796,7 +1114,7 @@ export default function NeuralWorkflowSystem() {
 
 
                 {activeTab === 'Data' && selectedDept !== 'HR' && selectedDept !== 'Marketing' && selectedDept !== 'Sales' && (
-                  <div className="space-y-10">
+                  <div className="w-full space-y-10">
                     {/* Header */}
                     <div className="flex justify-between items-center px-4">
                        <h3 className="text-xs font-black uppercase tracking-widest text-[#444]">
@@ -887,15 +1205,27 @@ export default function NeuralWorkflowSystem() {
                 )}
 
                 {activeTab === 'Ideas' && (
-                  <div className="space-y-8">
-                     <div className="flex justify-between items-center px-4">
+                  <div className="w-full space-y-8">
+                     <div className="flex w-full justify-between items-center px-0 sm:px-1">
                         <h3 className="text-xs font-black uppercase tracking-widest text-[#444]">AI Strategic Ideas</h3>
                      </div>
-                     <div className="grid gap-6">
+                     {deptInsightsBlocked ? (
+                       <div className="bg-[#0f0f0f] border border-orange-500/20 p-12 sm:p-16 rounded-[3rem] flex flex-col items-center text-center space-y-6">
+                         <div className="w-16 h-16 rounded-full border-4 border-orange-500/20 border-t-orange-500 animate-spin" />
+                         <div className="space-y-3 max-w-lg">
+                           <p className="text-white text-lg font-bold tracking-tight">{deptProcessingHeadline(selectedDept)}</p>
+                           <p className="text-[#888] text-xs font-medium leading-relaxed">{deptProcessingSubcopy(selectedDept)}</p>
+                           <p className="text-[10px] font-black uppercase tracking-[0.35em] text-orange-500/80">
+                             Playbooks and AI pitch assets unlock after this department run completes.
+                           </p>
+                         </div>
+                       </div>
+                     ) : (
+                     <div className="grid w-full gap-6">
                      {(() => {
                          if (selectedDept === 'HR') {
                           return (
-                            <div className="space-y-10 animate-in fade-in duration-700">
+                            <div className="w-full space-y-10 animate-in fade-in duration-700">
                                {/* CEO Report Section */}
                                {isGeneratingReport ? (
                                  <div className="bg-[#0f0f0f] border border-[#1a1a1a] p-20 rounded-[3rem] flex flex-col items-center justify-center space-y-6">
@@ -921,7 +1251,7 @@ export default function NeuralWorkflowSystem() {
                                            ? 'Auto-Generating CEO Report...'
                                            : 'Awaiting Candidate Analysis'}
                                        </h4>
-                                       <p className="text-[11px] text-[#444] font-bold uppercase tracking-widest max-w-[400px] mx-auto leading-relaxed">
+                                       <p className="text-[11px] text-[#444] font-bold uppercase tracking-widest max-w-none w-full mx-auto leading-relaxed text-center">
                                          {allHRData.length > 0
                                            ? 'AI has analyzed candidates but none are flagged as "Shortlisted" yet. You can manually generate a report for all analyzed talent.'
                                            : 'Add candidates in the Data tab. AI will auto-analyze and generate this report.'}
@@ -944,30 +1274,36 @@ export default function NeuralWorkflowSystem() {
                                      </div>
                                   </div>
                                ) : (
-                                 <div className="bg-[#0f0f0f] border border-[#1a1a1a] rounded-[3rem] overflow-hidden shadow-2xl relative group">
+                                 <div className="w-full min-w-0 bg-[#0f0f0f] border border-[#1a1a1a] rounded-2xl sm:rounded-3xl lg:rounded-[2.5rem] xl:rounded-[3rem] overflow-hidden shadow-2xl relative group">
                                     <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent pointer-events-none" />
                                     
                                     {/* Report Header */}
-                                    <div className="p-10 border-b border-[#1a1a1a] flex justify-between items-center bg-[#0a0a0a]">
-                                       <div className="flex items-center gap-6">
-                                          <div className="w-16 h-16 bg-purple-500/10 rounded-2xl flex items-center justify-center text-3xl border border-purple-500/20 shadow-inner">
+                                    <div className="w-full min-w-0 border-b border-[#1a1a1a] bg-[#0a0a0a] p-4 sm:p-6 md:p-8 lg:p-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                                       <div className="flex min-w-0 w-full flex-col gap-4 sm:flex-row sm:items-center sm:gap-5 md:gap-6">
+                                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-purple-500/20 bg-purple-500/10 text-2xl shadow-inner sm:h-16 sm:w-16 sm:rounded-2xl sm:text-3xl">
                                             📈
                                           </div>
-                                          <div>
-                                            <h4 className="text-2xl font-black text-white tracking-tight uppercase">CEO STRATEGIC TALENT REPORT</h4>
-                                            <p className="text-[10px] font-black text-purple-500 uppercase tracking-widest mt-1">AI-Driven Organizational Intelligence</p>
+                                          <div className="min-w-0 flex-1">
+                                            <h4 className="text-balance text-lg font-black uppercase leading-tight tracking-tight text-white sm:text-xl md:text-2xl lg:text-3xl xl:text-[1.65rem] 2xl:text-3xl">
+                                              CEO STRATEGIC TALENT REPORT
+                                            </h4>
+                                            <p className="mt-1.5 text-[9px] font-black uppercase tracking-[0.12em] text-purple-500 sm:text-[10px] sm:tracking-widest">
+                                              AI-Driven Organizational Intelligence
+                                            </p>
                                           </div>
                                        </div>
-                                       <div className="flex items-center gap-3">
+                                       <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3 lg:w-auto lg:shrink-0">
                                          <button 
+                                           type="button"
                                            onClick={() => window.print()}
-                                           className="px-6 py-2.5 bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-white/10 transition-all"
+                                           className="w-full px-5 py-2.5 text-[9px] font-black uppercase tracking-widest text-white transition-all border border-white/10 bg-white/5 rounded-lg hover:bg-white/10 sm:w-auto sm:rounded-xl sm:px-6 sm:text-[10px]"
                                          >
                                            Download PDF
                                          </button>
                                          <button 
+                                           type="button"
                                            onClick={() => generateHRReport()}
-                                           className="px-6 py-2.5 bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-purple-500/20 transition-all"
+                                           className="w-full px-5 py-2.5 text-[9px] font-black uppercase tracking-widest text-purple-400 transition-all border border-purple-500/20 bg-purple-500/10 rounded-lg hover:bg-purple-500/20 sm:w-auto sm:rounded-xl sm:px-6 sm:text-[10px]"
                                          >
                                            Regenerate
                                          </button>
@@ -975,57 +1311,57 @@ export default function NeuralWorkflowSystem() {
                                     </div>
 
                                     {/* Talent Dashboard Stats */}
-                                    <div className="px-10 py-8 grid grid-cols-1 md:grid-cols-3 gap-6 bg-[#080808]/50 border-b border-[#1a1a1a]">
-                                       <div className="p-6 bg-purple-500/5 border border-purple-500/10 rounded-[2rem] space-y-2">
-                                          <p className="text-[9px] font-black text-purple-400 uppercase tracking-widest">Total Shortlisted</p>
-                                          <p className="text-4xl font-black text-white italic tracking-tighter">{hrReport.shortlisted_candidates?.length || 0}</p>
+                                    <div className="grid w-full min-w-0 grid-cols-1 gap-4 bg-[#080808]/50 px-4 py-6 border-b border-[#1a1a1a] sm:gap-5 sm:px-6 sm:py-7 md:grid-cols-3 md:gap-6 md:px-8 lg:px-10 lg:py-8">
+                                       <div className="space-y-2 rounded-2xl border border-purple-500/10 bg-purple-500/5 p-4 sm:rounded-3xl sm:p-5 md:rounded-[2rem] md:p-6">
+                                          <p className="text-[8px] font-black uppercase tracking-widest text-purple-400 sm:text-[9px]">Total Shortlisted</p>
+                                          <p className="text-3xl font-black italic tracking-tighter text-white sm:text-4xl">{hrReport.shortlisted_candidates?.length || 0}</p>
                                        </div>
-                                       <div className="p-6 bg-emerald-500/5 border border-emerald-500/10 rounded-[2rem] space-y-2">
-                                          <p className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Avg Match Score</p>
-                                          <p className="text-4xl font-black text-white italic tracking-tighter">
+                                       <div className="space-y-2 rounded-2xl border border-emerald-500/10 bg-emerald-500/5 p-4 sm:rounded-3xl sm:p-5 md:rounded-[2rem] md:p-6">
+                                          <p className="text-[8px] font-black uppercase tracking-widest text-emerald-400 sm:text-[9px]">Avg Match Score</p>
+                                          <p className="text-3xl font-black italic tracking-tighter text-white sm:text-4xl">
                                             {Math.round(hrReport.shortlisted_candidates?.reduce((acc: number, c: any) => acc + (c.score || 0), 0) / (hrReport.shortlisted_candidates?.length || 1))}%
                                           </p>
                                        </div>
-                                       <div className="p-6 bg-blue-500/5 border border-blue-500/10 rounded-[2rem] space-y-2">
-                                          <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Top Discipline</p>
-                                          <p className="text-4xl font-black text-white italic tracking-tighter uppercase truncate">
+                                       <div className="space-y-2 rounded-2xl border border-blue-500/10 bg-blue-500/5 p-4 sm:rounded-3xl sm:p-5 md:rounded-[2rem] md:p-6">
+                                          <p className="text-[8px] font-black uppercase tracking-widest text-blue-400 sm:text-[9px]">Top Discipline</p>
+                                          <p className="text-xl font-black uppercase leading-tight tracking-tighter text-white sm:text-2xl md:text-3xl lg:text-4xl break-words">
                                             {inferDiscipline(hrReport.shortlisted_candidates?.[0])}
                                           </p>
                                        </div>
                                     </div>
 
                                     {/* Email Content */}
-                                    <div className="p-10 space-y-8">
-                                       <div className="space-y-4">
-                                          <p className="text-[11px] font-black text-[#444] uppercase tracking-[0.3em]">Subject Line</p>
-                                          <div className="p-6 bg-[#080808] border border-[#1a1a1a] rounded-2xl">
-                                             <p className="text-lg font-bold text-white tracking-tight">{hrReport.subject}</p>
+                                    <div className="w-full min-w-0 space-y-6 p-4 sm:space-y-7 sm:p-6 md:space-y-8 md:p-8 lg:p-10">
+                                       <div className="space-y-3 sm:space-y-4">
+                                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#444] sm:text-[11px] sm:tracking-[0.3em]">Subject Line</p>
+                                          <div className="rounded-xl border border-[#1a1a1a] bg-[#080808] p-4 sm:rounded-2xl sm:p-5 md:p-6">
+                                             <p className="text-base font-bold tracking-tight text-white sm:text-lg">{hrReport.subject}</p>
                                           </div>
                                        </div>
 
-                                       <div className="space-y-4">
-                                          <p className="text-[11px] font-black text-[#444] uppercase tracking-[0.3em]">Email Preview</p>
-                                          <div className="p-8 bg-[#080808] border border-[#1a1a1a] rounded-3xl relative">
-                                             <div className="absolute top-6 right-6 text-[9px] font-black text-[#222] uppercase tracking-widest">Confidential / AI Output</div>
-                                             <div className="text-sm text-slate-300 leading-[1.8] whitespace-pre-wrap font-medium">
+                                       <div className="space-y-3 sm:space-y-4">
+                                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#444] sm:text-[11px] sm:tracking-[0.3em]">Email Preview</p>
+                                          <div className="relative rounded-2xl border border-[#1a1a1a] bg-[#080808] p-4 pt-10 sm:rounded-3xl sm:p-6 sm:pt-12 md:p-8">
+                                             <div className="absolute right-3 top-3 text-[8px] font-black uppercase tracking-widest text-[#222] sm:right-6 sm:top-6 sm:text-[9px]">Confidential / AI Output</div>
+                                             <div className="text-xs font-medium leading-relaxed text-slate-300 whitespace-pre-wrap sm:text-sm sm:leading-[1.8]">
                                                {hrReport.email_body}
                                              </div>
                                           </div>
                                        </div>
 
-                                       <div className="space-y-4">
-                                          <p className="text-[11px] font-black text-[#444] uppercase tracking-[0.3em]">Shortlisted Candidates Breakdown</p>
-                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                       <div className="space-y-3 sm:space-y-4">
+                                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#444] sm:text-[11px] sm:tracking-[0.3em]">Shortlisted Candidates Breakdown</p>
+                                          <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2">
                                             {hrReport.shortlisted_candidates?.map((c: any) => (
-                                              <div key={c.id} className="p-6 bg-[#080808] border border-[#1a1a1a] rounded-2xl flex flex-col gap-4 group/card hover:border-purple-500/30 transition-all">
-                                                <div className="flex justify-between items-start">
-                                                  <div>
-                                                    <p className="text-sm font-bold text-white tracking-tight">{c.name}</p>
-                                                    <p className="text-[9px] font-black text-purple-500 uppercase tracking-widest mt-1">{c.role}</p>
+                                              <div key={c.id} className="group/card flex flex-col gap-4 rounded-xl border border-[#1a1a1a] bg-[#080808] p-4 transition-all hover:border-purple-500/30 sm:rounded-2xl sm:p-5 md:p-6">
+                                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                                  <div className="min-w-0">
+                                                    <p className="text-sm font-bold tracking-tight text-white">{c.name}</p>
+                                                    <p className="mt-1 text-[8px] font-black uppercase tracking-widest text-purple-500 sm:text-[9px]">{formatShortlistedCardRole(c)}</p>
                                                   </div>
-                                                  <div className="flex flex-col items-end">
-                                                    <span className="text-lg font-black text-white">{c.score}%</span>
-                                                    <span className="text-[8px] font-black text-[#333] uppercase tracking-widest">Match Score</span>
+                                                  <div className="flex flex-col items-start sm:items-end shrink-0">
+                                                    <span className="text-lg font-black text-white sm:text-xl">{c.score}%</span>
+                                                    <span className="text-[8px] font-black uppercase tracking-widest text-[#333]">Match Score</span>
                                                   </div>
                                                 </div>
                                                 <div className="space-y-2">
@@ -1043,9 +1379,9 @@ export default function NeuralWorkflowSystem() {
 
                                        {/* Strategic Roadmap */}
                                        {hrReport.details?.roadmap && (
-                                         <div className="space-y-4">
-                                            <p className="text-[11px] font-black text-[#444] uppercase tracking-[0.3em]">Strategic Roadmap</p>
-                                            <div className="bg-purple-500/5 border border-purple-500/10 p-6 rounded-2xl space-y-4">
+                                         <div className="space-y-3 sm:space-y-4">
+                                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#444] sm:text-[11px] sm:tracking-[0.3em]">Strategic Roadmap</p>
+                                            <div className="space-y-3 rounded-xl border border-purple-500/10 bg-purple-500/5 p-4 sm:space-y-4 sm:rounded-2xl sm:p-6">
                                               {hrReport.details.roadmap.map((step: string, i: number) => (
                                                 <div key={i} className="flex gap-4 items-start">
                                                   <span className="w-5 h-5 bg-purple-500/10 rounded-lg flex items-center justify-center text-[10px] font-black text-purple-500 border border-purple-500/20">{i+1}</span>
@@ -1057,31 +1393,33 @@ export default function NeuralWorkflowSystem() {
                                        )}
 
                                        {/* Action Buttons */}
-                                       <div className="flex gap-4 pt-6">
+                                       <div className="flex flex-col gap-3 pt-4 sm:flex-row sm:gap-4 sm:pt-6">
                                           <button 
+                                            type="button"
                                             onClick={() => {
                                               const mailto = `mailto:ceo@company.com?subject=${encodeURIComponent(hrReport.subject)}&body=${encodeURIComponent(hrReport.email_body)}`;
                                               window.location.href = mailto;
                                             }}
-                                            className="flex-1 py-5 bg-white text-black text-xs font-black uppercase tracking-[0.3em] rounded-2xl hover:bg-emerald-500 hover:text-white transition-all shadow-[0_20px_50px_rgba(255,255,255,0.1)] active:scale-[0.98]"
+                                            className="w-full flex-1 rounded-xl bg-white py-4 text-[10px] font-black uppercase tracking-[0.2em] text-black shadow-[0_20px_50px_rgba(255,255,255,0.1)] transition-all hover:bg-emerald-500 hover:text-white active:scale-[0.98] sm:rounded-2xl sm:py-5 sm:text-xs sm:tracking-[0.3em]"
                                           >
                                             🚀 Send to CEO Now
                                           </button>
                                           <button 
+                                            type="button"
                                             onClick={() => {
                                               navigator.clipboard.writeText(`${hrReport.subject}\n\n${hrReport.email_body}`);
                                               addToast('✅ Copied to clipboard', 'success');
                                             }}
-                                            className="px-10 py-5 bg-white/5 border border-white/10 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-white/10 transition-all"
+                                            className="w-full rounded-xl border border-white/10 bg-white/5 px-6 py-4 text-[9px] font-black uppercase tracking-widest text-white transition-all hover:bg-white/10 sm:w-auto sm:px-10 sm:py-5 sm:rounded-2xl sm:text-[10px]"
                                           >
                                             Copy Email
                                           </button>
                                        </div>
                                     </div>
 
-                                    <div className="px-10 py-4 bg-[#0a0a0a] border-t border-[#1a1a1a] flex justify-between items-center">
-                                       <p className="text-[9px] font-bold text-[#333] uppercase tracking-widest">Generated by AI HR Agent • {new Date(hrReport.created_at).toLocaleString()}</p>
-                                       <p className="text-[9px] font-bold text-emerald-500/50 uppercase tracking-widest">Encrypted & Stored</p>
+                                    <div className="flex flex-col gap-2 border-t border-[#1a1a1a] bg-[#0a0a0a] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6 sm:py-4 md:px-8 lg:px-10">
+                                       <p className="text-[8px] font-bold uppercase tracking-widest text-[#333] sm:text-[9px]">Generated by AI HR Agent • {new Date(hrReport.created_at).toLocaleString()}</p>
+                                       <p className="text-[8px] font-bold uppercase tracking-widest text-emerald-500/50 sm:text-[9px]">Encrypted & Stored</p>
                                     </div>
                                  </div>
                                )}
@@ -1090,35 +1428,34 @@ export default function NeuralWorkflowSystem() {
                         } else if (selectedDept === 'Marketing') {
                           const viralReady = allMarketingData.filter(p => p.marketing_analysis?.length > 0);
                           return (
-                            <div className="space-y-8">
+                            <div className="w-full space-y-8">
                                {/* General Marketing Strategy (Always Visible) */}
-                               <div className="bg-[#0f0f0f] border border-[#1a1a1a] p-8 rounded-[2rem] hover:border-pink-500/30 transition-all space-y-6">
+                               <div className="w-full bg-[#0f0f0f] border border-[#1a1a1a] p-6 sm:p-8 rounded-[2rem] hover:border-pink-500/30 transition-all space-y-6">
                                   <div className="flex justify-between items-start">
                                     <div className="flex gap-6 items-center">
                                       <div className="w-16 h-16 bg-pink-500/10 rounded-2xl flex items-center justify-center text-3xl shadow-inner border border-pink-500/20">
                                         📣
                                       </div>
                                       <div>
-                                        <h4 className="text-xl font-bold text-white tracking-tight">Viral Growth Architecture</h4>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-pink-500 mt-1">Multi-Channel Distribution Strategy</p>
+                                        <h4 className="text-xl font-bold text-white tracking-tight">Growth & distribution playbook</h4>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-pink-500 mt-1">Short-form creative · Channel fit · Audience signals</p>
                                       </div>
                                     </div>
                                     <button 
                                       onClick={() => {
-                                        console.log('Marketing Roadmap clicked');
                                         setSelectedRoadmap({
-                                          title: 'Viral Growth Architecture',
+                                          title: 'Growth & distribution playbook',
                                           dept: 'Marketing',
                                           content: {
-                                            objective: 'Dominate short-form platforms by leveraging AI hook generation and automated distribution nodes.',
+                                            objective: 'Turn consistent creative output into measurable pipeline—by pairing crisp hooks with proof, and aligning every post to one revenue story.',
                                             steps: [
-                                              'Fine-tune Llama 3.1 on viral reel hooks and psychological triggers.',
-                                              'Automate video clipping and captioning for 24/7 cross-platform posting.',
-                                              'Implement "Engagement Pod" bots for initial social proof boosting.',
-                                              'AI sentiment analysis on comments to auto-generate personalized replies.'
+                                              'Establish three repeatable hook formats grounded in customer language and proof points.',
+                                              'Publish on a steady weekly rhythm with creative refreshes tied to performance, not guesswork.',
+                                              'Route high-intent comments and DMs to a single, fast follow-up experience your team can sustain.',
+                                              'Review saves, shares, and site sessions weekly to decide what gets another week—and what graduates to paid.'
                                             ],
-                                            roi: 'Targeting 10M+ impressions per month with 0 manual content creation hours.',
-                                            resources: '1 Content Agent, Groq API (High Latency Priority), Canva Automation SDK.'
+                                            roi: 'Higher-quality attention, faster learning cycles, and clearer attribution from social to signups.',
+                                            resources: 'Creative templates, lightweight analytics, and one owner who keeps the calendar honest.'
                                           }
                                         });
                                         setShowRoadmapModal(true);
@@ -1128,19 +1465,19 @@ export default function NeuralWorkflowSystem() {
                                       <span>📊</span> Generate Detailed Report
                                     </button>
                                   </div>
-                                  <div className="grid grid-cols-2 gap-6">
-                                     <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a]">
-                                        <p className="text-[9px] font-black text-pink-500 uppercase tracking-widest mb-4">Viral Hooks</p>
+                                  <div className="grid w-full grid-cols-1 md:grid-cols-2 gap-6">
+                                     <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a] min-w-0">
+                                        <p className="text-[9px] font-black text-pink-500 uppercase tracking-widest mb-4">Hooks that land</p>
                                         <ul className="space-y-3">
-                                          <li className="text-xs text-slate-300 font-medium">• "The Secret Workflow AI Startups Hate"</li>
-                                          <li className="text-xs text-slate-300 font-medium">• Quantifiable Results: 0 to 1M in 30 Days</li>
+                                          <li className="text-xs text-slate-300 font-medium">• Lead with a sharp tension: what changed, why it matters, what to do next.</li>
+                                          <li className="text-xs text-slate-300 font-medium">• Pair a bold claim with one credible proof point customers can verify fast.</li>
                                         </ul>
                                      </div>
-                                     <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a]">
-                                        <p className="text-[9px] font-black text-cyan-500 uppercase tracking-widest mb-4">Channel Mix</p>
+                                     <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a] min-w-0">
+                                        <p className="text-[9px] font-black text-cyan-500 uppercase tracking-widest mb-4">Where to show up</p>
                                         <ul className="space-y-3">
-                                          <li className="text-xs text-slate-300 font-medium">• Short-Form (Reels/TikTok) Dominance</li>
-                                          <li className="text-xs text-slate-300 font-medium">• LinkedIn Value-First Threading</li>
+                                          <li className="text-xs text-slate-300 font-medium">• Short-form for discovery; keep one flagship CTA that maps to a real business outcome.</li>
+                                          <li className="text-xs text-slate-300 font-medium">• Long-form for depth—threads and posts that teach, then invite the next step.</li>
                                         </ul>
                                      </div>
                                   </div>
@@ -1151,10 +1488,10 @@ export default function NeuralWorkflowSystem() {
                                    ? profile.marketing_analysis[0]
                                    : null;
                                  if (!analysis) return null;
-                                 const mailtoLink = `mailto:ceo@company.com?subject=Marketing Opportunity: ${encodeURIComponent(profile.handle_name)}&body=${encodeURIComponent(`Hi CEO,\n\nI ran a viral audit on ${profile.handle_name} (${profile.platform}) and the AI flagged it as VIRAL READY.\n\nSummary:\n${analysis.summary || analysis.reason}\n\nStrengths:\n${(analysis.pros || []).map((p:string) => '- ' + p).join('\n')}\n\nContent Strategy / Pitch:\n${analysis.content_ideas || 'No specific ideas generated.'}\n\nLet me know if we should allocate budget to test this strategy.\n\nBest,\nMarketing Team`)}`;
+                                 const mailtoLink = `mailto:ceo@company.com?subject=Marketing Opportunity: ${encodeURIComponent(profile.handle_name)}&body=${encodeURIComponent(`Hi CEO,\n\nHere’s a concise read on ${profile.handle_name} (${profile.platform})—strong signals for the next creative sprint.\n\nSummary:\n${analysis.summary || analysis.reason || 'Summary available in the dashboard.'}\n\nStrengths:\n${(analysis.pros || []).map((p:string) => '- ' + p).join('\n') || '- See dashboard for highlights'}\n\nDirection:\n${analysis.content_ideas || 'Creative direction is outlined in the workspace—happy to walk through options.'}\n\nIf you want, we can align budget and timeline next week.\n\nBest,\nMarketing`)}`;
 
                                  return (
-                                   <div key={profile.id} className="bg-[#0f0f0f] border border-[#1a1a1a] p-8 rounded-[2rem] border-pink-500/20 shadow-[0_0_20px_rgba(236,72,153,0.05)] space-y-6">
+                                   <div key={profile.id} className="w-full bg-[#0f0f0f] border border-[#1a1a1a] p-6 sm:p-8 rounded-[2rem] border-pink-500/20 shadow-[0_0_20px_rgba(236,72,153,0.05)] space-y-6">
                                       <div className="flex justify-between items-start">
                                         <div className="flex gap-6 items-center">
                                           <div className="w-16 h-16 bg-pink-500/10 rounded-2xl flex items-center justify-center text-3xl shadow-inner border border-pink-500/20">
@@ -1171,7 +1508,7 @@ export default function NeuralWorkflowSystem() {
                                       </div>
                                       <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a] space-y-4">
                                          <p className="text-[9px] font-black text-pink-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                            <span className="w-1.5 h-1.5 bg-pink-500 rounded-full"/> Viral Content Strategy
+                                            <span className="w-1.5 h-1.5 bg-pink-500 rounded-full"/> Content direction
                                          </p>
                                          <p className="text-sm text-slate-300 leading-relaxed font-medium">{analysis.content_ideas || analysis.summary}</p>
                                       </div>
@@ -1184,34 +1521,33 @@ export default function NeuralWorkflowSystem() {
                           const latestSales = allSalesData[0];
                           
                           return (
-                            <div className="space-y-8">
-                               <div className="bg-[#0f0f0f] border border-[#1a1a1a] p-8 rounded-[2rem] hover:border-emerald-500/30 transition-all space-y-6">
-                                  <div className="flex justify-between items-start">
-                                    <div className="flex gap-6 items-center">
-                                      <div className="w-16 h-16 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-3xl shadow-inner border border-emerald-500/20">
+                            <div className="w-full space-y-8">
+                               <div className="w-full bg-[#0f0f0f] border border-[#1a1a1a] p-6 sm:p-8 rounded-[2rem] hover:border-emerald-500/30 transition-all space-y-6">
+                                  <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-start">
+                                    <div className="flex gap-6 items-center min-w-0">
+                                      <div className="w-16 h-16 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-3xl shadow-inner border border-emerald-500/20 shrink-0">
                                         💰
                                       </div>
-                                      <div>
-                                        <h4 className="text-xl font-bold text-white tracking-tight">Global Sales Infrastructure</h4>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mt-1">High-Conversion Outreach Roadmap</p>
+                                      <div className="min-w-0">
+                                        <h4 className="text-xl font-bold text-white tracking-tight">Revenue motion blueprint</h4>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mt-1">Pipeline clarity · Message-market fit · Follow-through</p>
                                       </div>
                                     </div>
                                     <button 
                                       onClick={() => {
-                                        console.log('Sales Roadmap clicked');
                                         setSelectedRoadmap({
-                                          title: 'Global Sales Infrastructure',
+                                          title: 'Revenue motion blueprint',
                                           dept: 'Sales',
                                           content: {
-                                            objective: 'Build a borderless sales engine using AI-led discovery and automated high-ticket closing sequences.',
+                                            objective: 'Build a repeatable path from first touch to qualified conversation—grounded in clear ICP, crisp proof, and a follow-up rhythm your team can sustain.',
                                             steps: [
-                                              'Sync Apollo.io data with autonomous email agents for Tier-1 prospecting.',
-                                              'Deploy AI Voice Agents for initial outbound qualification calls.',
-                                              'Implement Dynamic Sales Deck generation based on lead pain-points.',
-                                              'Automated CRM lifecycle management with zero manual entry.'
+                                              'Define your best-fit accounts and the one outcome you want every conversation to advance.',
+                                              'Shape outreach around customer language, proof, and a single CTA that maps to your funnel.',
+                                              'Use short discovery calls to qualify fit fast—then send tailored follow-ups within 24 hours.',
+                                              'Keep CRM hygiene lightweight: stages, next steps, and reasons win or lose—so forecasts stay honest.'
                                             ],
-                                            roi: 'Expected 3x increase in Qualified Leads and 20% higher conversion on deals.',
-                                            resources: '1 Sales Agent, Groq Llama 3 (for call analysis), CRM Webhooks.'
+                                            roi: 'More qualified conversations, shorter sales cycles, and cleaner forecasting without adding headcount noise.',
+                                            resources: 'A tight ICP doc, a message library, CRM discipline, and weekly pipeline review.'
                                           }
                                         });
                                         setShowRoadmapModal(true);
@@ -1223,12 +1559,12 @@ export default function NeuralWorkflowSystem() {
                                   </div>
                                   <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a]">
                                      <p className="text-[9px] font-black text-[#555] uppercase tracking-widest mb-2">Core Sales Logic</p>
-                                     <p className="text-sm text-slate-300 leading-relaxed font-medium">Focus on Tier-1 stakeholders in growth-stage automation sectors. Primary lever: Quantifiable ROI proof.</p>
+                                     <p className="text-sm text-slate-300 leading-relaxed font-medium">Meet buyers where decisions are made: lead with outcomes, show the math, and make the next step obvious. Proof beats pitch every time.</p>
                                   </div>
                                </div>
 
                                {latestSales && (
-                                 <div className="bg-[#0f0f0f] border border-emerald-500/20 p-8 rounded-[2rem] shadow-[0_0_20px_rgba(16,185,129,0.05)] space-y-6">
+                                 <div className="w-full bg-[#0f0f0f] border border-emerald-500/20 p-6 sm:p-8 rounded-[2rem] shadow-[0_0_20px_rgba(16,185,129,0.05)] space-y-6">
                                     <div className="flex justify-between items-start">
                                       <div className="flex gap-6 items-center">
                                         <div className="w-16 h-16 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-3xl shadow-inner border border-emerald-500/20">
@@ -1254,25 +1590,25 @@ export default function NeuralWorkflowSystem() {
                           const latestOps = allOpsData[0];
                           
                           return (
-                            <div className="space-y-8">
-                               <div className="bg-[#0f0f0f] border border-[#1a1a1a] p-8 rounded-[2rem] hover:border-blue-500/30 transition-all space-y-6">
-                                  <div className="flex gap-6 items-center">
-                                    <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center text-3xl shadow-inner border border-blue-500/20">
+                            <div className="w-full space-y-8">
+                               <div className="w-full bg-[#0f0f0f] border border-[#1a1a1a] p-6 sm:p-8 rounded-[2rem] hover:border-blue-500/30 transition-all space-y-6">
+                                  <div className="flex gap-6 items-center min-w-0">
+                                    <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center text-3xl shadow-inner border border-blue-500/20 shrink-0">
                                       ⚖️
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                       <h4 className="text-xl font-bold text-white tracking-tight">Operational Excellence Framework</h4>
                                       <p className="text-[10px] font-black uppercase tracking-widest text-blue-500 mt-1">Global Process Optimization</p>
                                     </div>
                                   </div>
                                   <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a]">
                                      <p className="text-[9px] font-black text-[#555] uppercase tracking-widest mb-2">Efficiency Thesis</p>
-                                     <p className="text-sm text-slate-300 leading-relaxed font-medium">Removing manual bottlenecks via automated department workers. Goal: 100% autonomous data sync.</p>
+                                     <p className="text-sm text-slate-300 leading-relaxed font-medium">Great operations isn’t more tools—it’s fewer handoffs, clearer ownership, and dashboards people actually trust. Tighten the loop between work shipped and outcomes measured.</p>
                                   </div>
                                </div>
 
                                {latestOps && (
-                                 <div className="bg-[#0f0f0f] border border-blue-500/20 p-8 rounded-[2rem] shadow-[0_0_20px_rgba(59,130,246,0.05)] space-y-6">
+                                 <div className="w-full bg-[#0f0f0f] border border-blue-500/20 p-6 sm:p-8 rounded-[2rem] shadow-[0_0_20px_rgba(59,130,246,0.05)] space-y-6">
                                     <div className="flex justify-between items-start">
                                       <div className="flex gap-6 items-center">
                                         <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center text-3xl shadow-inner border border-blue-500/20">
@@ -1294,29 +1630,29 @@ export default function NeuralWorkflowSystem() {
                           );
                          } else if (selectedDept === 'Finance') {
                           return (
-                            <div className="bg-[#0f0f0f] border border-[#1a1a1a] p-8 rounded-[2rem] hover:border-amber-500/30 transition-all space-y-6">
-                               <div className="flex gap-6 items-center">
-                                 <div className="w-16 h-16 bg-amber-500/10 rounded-2xl flex items-center justify-center text-3xl shadow-inner border border-amber-500/20">
+                            <div className="w-full bg-[#0f0f0f] border border-[#1a1a1a] p-6 sm:p-8 rounded-[2rem] hover:border-amber-500/30 transition-all space-y-6">
+                               <div className="flex gap-6 items-center min-w-0">
+                                 <div className="w-16 h-16 bg-amber-500/10 rounded-2xl flex items-center justify-center text-3xl shadow-inner border border-amber-500/20 shrink-0">
                                    💰
                                  </div>
-                                 <div>
-                                   <h4 className="text-xl font-bold text-white tracking-tight">Financial Growth Framework</h4>
-                                   <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mt-1">Capital Efficiency & Revenue Recovery</p>
+                                 <div className="min-w-0">
+                                   <h4 className="text-xl font-bold text-white tracking-tight">Financial clarity playbook</h4>
+                                   <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mt-1">Cash discipline · Revenue resilience · Forecast confidence</p>
                                  </div>
                                </div>
-                               <div className="grid grid-cols-2 gap-6">
-                                  <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a]">
-                                     <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-4">Revenue Ideas</p>
+                               <div className="grid w-full grid-cols-1 md:grid-cols-2 gap-6">
+                                  <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a] min-w-0">
+                                     <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-4">Revenue levers</p>
                                      <ul className="space-y-2">
-                                       <li className="text-[11px] text-slate-300">• Automated Dunning Sequences</li>
-                                       <li className="text-[11px] text-slate-300">• Dynamic Subscription Pricing</li>
+                                       <li className="text-[11px] text-slate-300">• Friendly, timely reminders that recover revenue without sounding robotic.</li>
+                                       <li className="text-[11px] text-slate-300">• Packaging and pricing tests aligned to value—so expansion feels natural, not forced.</li>
                                      </ul>
                                   </div>
-                                  <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a]">
-                                     <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest mb-4">Optimization</p>
+                                  <div className="p-6 bg-[#0a0a0a] rounded-2xl border border-[#1a1a1a] min-w-0">
+                                     <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest mb-4">Operational edge</p>
                                      <ul className="space-y-2">
-                                       <li className="text-[11px] text-slate-300">• AI Expense Categorization</li>
-                                       <li className="text-[11px] text-slate-300">• Predictive Cashflow Models</li>
+                                       <li className="text-[11px] text-slate-300">• Cleaner spend visibility—categories your finance team can trust at month-end.</li>
+                                       <li className="text-[11px] text-slate-300">• Forward-looking cash views so leadership can act early, not react late.</li>
                                      </ul>
                                   </div>
                                </div>
@@ -1330,6 +1666,7 @@ export default function NeuralWorkflowSystem() {
                         );
                      })()}
                      </div>
+                     )}
                   </div>
                 )}
               </>
@@ -1342,7 +1679,9 @@ export default function NeuralWorkflowSystem() {
                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-[#333]">Chat with {selectedDept}</h3>
                 <div className="space-y-6">
                    <div className="p-5 bg-[#111] rounded-2xl text-[11px] text-[#888] leading-relaxed border border-white/5 italic">
-                      "I have analyzed the current {selectedDept.toLowerCase()} data. All nodes are reporting nominal efficiency. Would you like to deep-dive into the forecast or individual performance metrics?"
+                      {deptInsightsBlocked
+                        ? `Your latest ${selectedDept.toLowerCase()} run is still processing. I will stay in sync with results and can help interpret them the moment this job completes.`
+                        : `I have analyzed the current ${selectedDept.toLowerCase()} data. Ask for a tight summary, risks, or next actions and I will anchor answers in what is on file.`}
                    </div>
                 </div>
              </div>

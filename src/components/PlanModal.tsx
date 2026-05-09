@@ -6,6 +6,7 @@ import DynamicForm from './DynamicForm';
 import { useToast } from './Toast';
 import { supabase } from '@/src/lib/supabase';
 import { apiUrl } from '@/src/lib/api';
+import { formatInstagramProfileLabel } from '@/src/lib/instagram';
 
 interface PlanModalProps {
   isOpen: boolean;
@@ -65,7 +66,7 @@ export default function PlanModal({ isOpen, onClose, onPlanCreated }: PlanModalP
           .insert([{
             name: null,
             email: null,
-            role: formData.role || 'Unspecified Role',
+            role: formData.role?.trim() || '',
             experience: null,
             resume_url: publicUrl,
             department: 'HR'
@@ -145,12 +146,16 @@ export default function PlanModal({ isOpen, onClose, onPlanCreated }: PlanModalP
         addToast('✅ Resume parsed and candidate profile created!', 'success');
       } else if (department === 'Marketing') {
         // SPECIAL CASE: Marketing Task Creation (must use backend /tasks so TaskQueue sees it)
+        const igWho =
+          formatInstagramProfileLabel(formData.instagramUrl) ||
+          String(formData.companyName || '').trim() ||
+          'this profile';
         const res = await fetch(apiUrl('/tasks'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title: `Instagram Viral Audit: ${formData.companyName}`,
-            description: `Autonomous audit of ${formData.instagramUrl} to extract viral patterns and content ideas.`,
+            title: `Instagram presence review: ${formData.companyName}`,
+            description: `Review ${igWho} on Instagram to surface what resonates with your audience, where momentum is building, and which creative directions deserve the next sprint of focus.`,
             department: 'Marketing',
             priority: 'HIGH',
             details: {
@@ -166,7 +171,7 @@ export default function PlanModal({ isOpen, onClose, onPlanCreated }: PlanModalP
           const err = await res.json().catch(() => ({}));
           throw new Error(err.error || 'Failed to create marketing task');
         }
-        addToast('🚀 Marketing Task queued for CEO approval!', 'success');
+        addToast('Marketing plan added to your queue for review.', 'success');
       } else {
         // STANDARD CASE: Other Departments
         const endpoint = department === 'Sales' ? apiUrl('/sales/analyze') : apiUrl('/plan/generate');

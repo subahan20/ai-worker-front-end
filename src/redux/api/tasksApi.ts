@@ -124,12 +124,7 @@ export const tasksApi = createApi({
       query: () => '/tasks',
       transformResponse: (response: unknown) => {
         const rows = Array.isArray(response) ? response : [];
-        const normalized = rows.map(normalizeTask);
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('API RESPONSE /tasks:', rows.slice(0, 5));
-          console.log('TASK DATA normalized:', normalized.slice(0, 5));
-        }
-        return normalized;
+        return rows.map(normalizeTask);
       },
       providesTags: ['Task'],
     }),

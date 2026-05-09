@@ -127,17 +127,30 @@ export const selectHRData = (state: RootState) => {
 
 export const selectMarketingData = (state: RootState) => {
   const marketingTasks = selectTasksByDepartment('Marketing')(state);
-  return marketingTasks.map(t => ({
+  return marketingTasks.map(t => {
+    const meta = (t as any)?.metadata || {};
+    const title = String((t as any)?.title || '').trim();
+    const fromViralTitle =
+      title.match(/(?:Viral Audit|Instagram presence review):\s*(.+)$/i)?.[1]?.trim() || '';
+    const handle_name =
+      String(meta.handle_name || '').trim() ||
+      String(meta.profile_name || '').trim() ||
+      String(meta.company_name || '').trim() ||
+      fromViralTitle ||
+      (title && !/^instagram\s+viral\s+audit/i.test(title) ? title : '') ||
+      'Marketing target';
+    return {
     ...t,
-    handle_name: (t as any)?.metadata?.handle_name || (t as any)?.metadata?.profile_name || String((t as any)?.title || 'Marketing Profile'),
-    platform: (t as any)?.metadata?.platform || 'Instagram',
-    followers: (t as any)?.metadata?.followers || null,
+    handle_name,
+    platform: String(meta.platform || '').trim() || 'Instagram',
+    followers: (t as any)?.metadata?.followers ?? null,
     marketing_analysis: Array.isArray((t as any).marketing_analysis)
       ? (t as any).marketing_analysis
       : ((t as any).analysis ? [(t as any).analysis] : []),
     viral_reels: t.analysis?.reels || [],
     insight: t.analysis?.strategy || ''
-  }));
+  };
+  });
 };
 
 export const selectSalesData = (state: RootState) => {

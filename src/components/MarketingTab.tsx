@@ -23,8 +23,8 @@ export default function MarketingTab({ profiles }: MarketingTabProps) {
     <div className="space-y-12">
       <header className="flex justify-between items-center bg-[#080808] p-10 rounded-[3rem] border border-white/5">
         <div className="flex flex-col gap-2">
-          <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Marketing Intelligence</h2>
-          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-pink-500">Autonomous Viral Auditor · Results Vault</p>
+          <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Marketing intelligence</h2>
+          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-pink-500">Audience signals · Creative direction · Performance clarity</p>
         </div>
         <div className="flex items-center gap-3 px-6 py-3 bg-pink-500/10 border border-pink-500/20 rounded-2xl">
            <span className="w-2 h-2 bg-pink-500 rounded-full animate-pulse shadow-[0_0_10px_#ec4899]" />
@@ -36,7 +36,7 @@ export default function MarketingTab({ profiles }: MarketingTabProps) {
         <div className="space-y-8">
           <div className="bg-[#0f0f0f] border border-white/5 p-10 rounded-[2.5rem] space-y-10">
             <div className="flex justify-between items-center">
-              <h3 className="text-xs font-black uppercase tracking-[0.3em] text-white">Groq Content Strategy</h3>
+              <h3 className="text-xs font-black uppercase tracking-[0.3em] text-white">Content strategy</h3>
               <span className="px-3 py-1 bg-pink-500/10 text-pink-400 text-[9px] font-black uppercase tracking-widest rounded-lg border border-pink-500/20">
                 Department: Marketing
               </span>
